@@ -24,7 +24,11 @@ export default function LoginScreen() {
   const handleSignIn = () => {
     if (email === 'attendant@parksmart.io') {
       router.replace('/attendant' as any);
-    } else {
+    } else if(email === 'admin@parksmart.io') {
+      router.replace('/admin' as any);
+    } else if(email === 'county@parksmart.io'){
+      router.replace('/county' as any);
+    }else{
       router.replace('/driver' as any);
     }
   };
@@ -101,6 +105,18 @@ export default function LoginScreen() {
               <Text style={styles.signInText}>Sign In</Text>
             </TouchableOpacity>
 
+            {/* ── NEW: Register link ── */}
+            <View style={styles.registerRow}>
+                <Text style={styles.registerPrompt}>Don't have an account? </Text>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/RegisterScreen' as any)}
+                    activeOpacity={0.75}
+                          >
+                    <Text style={styles.registerLink}>Sign Up</Text>
+                  </TouchableOpacity>
+            </View>
+            
+
             {/* Demo Accounts */}
             <View style={styles.demoBox}>
               <Text style={styles.demoTitle}>Demo Accounts</Text>
@@ -112,6 +128,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               ))}
               <Text style={styles.demoHint}>Tap any row to auto-fill credentials</Text>
+  
             </View>
           </View>
         </ScrollView>
@@ -204,6 +221,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     marginBottom: 28,
+  },
+  registerRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  registerPrompt: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  registerLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.accent,
   },
   inputWrap: {
     flexDirection: 'row',

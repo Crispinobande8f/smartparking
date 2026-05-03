@@ -62,3 +62,51 @@ export const Shadow = {
     elevation: 10,
   },
 };
+
+
+import { Dimensions, Platform } from 'react-native';
+
+const { width: W, height: H } = Dimensions.get('window');
+export const scale = (size: number) => (W / 375) * size;
+
+export const colors = {
+  navy: '#0F2D5E',
+  navyLight: '#1A4A8A',
+  dark: '#1A1A2E',
+  green: '#00C48C',
+  greenLight: '#E8FBF5',
+  amber: '#F5A623',
+  amberLight: '#FEF6E7',
+  red: '#E84040',
+  redLight: '#FDEAEA',
+  white: '#FFFFFF',
+  surface: '#F7F8FA',
+  border: '#ECEEF2',
+  textPrimary: '#1A1A2E',
+  textSecondary: '#8A94A6',
+  textMuted: '#B0B7C3',
+};
+
+export const shadows = {
+  card: {
+    shadowColor: '#0F2D5E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  strong: {
+    shadowColor: '#0F2D5E',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.13,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+};
+
+export const layout = { W, H };
+
+//admin themes
+
+ 
+export const W_SCREEN = W;

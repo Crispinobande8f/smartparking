@@ -13,15 +13,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow } from '../../../constants/theme';
 import { PARKING_SLOTS, ParkingSlot } from '../../../constants/data';
 import SlotCard from '../../../components/SlotCard';
-import BookingModal from '../../../components/BookingModal';
+import BookingSheet,{SlotInfo} from '../../../components/BookingSheet';
 
 const ZONES = ['All Zones', 'Zone A', 'Zone B', 'Zone C', 'Zone D'];
 
 export default function DriverHome() {
   const router = useRouter();
   const [selectedZone, setSelectedZone] = useState('All Zones');
-  const [selectedSlot, setSelectedSlot] = useState<ParkingSlot | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
+  //const [modalVisible, setModalVisible] = useState(false);
 
   const filteredSlots = useMemo(() => {
     if (selectedZone === 'All Zones') return PARKING_SLOTS;
@@ -37,14 +37,18 @@ export default function DriverHome() {
   }, []);
 
   const handleSlotPress = (slot: ParkingSlot) => {
-    setSelectedSlot(slot);
-    setModalVisible(true);
-  };
+    setSelectedSlot({
+        id: slot.id,
+        number:      slot.id,                              
+        zone:        slot.zone,
+        ratePerHour: 100,                              
+     });
+    };
 
-  const handleConfirm = (slot: ParkingSlot, hours: number) => {
-    setModalVisible(false);
+  //const handleConfirm = (slot: ParkingSlot, hours: number) => {
+    //setModalVisible(false);
     // Navigate to history or show success
-  };
+  //};
 
   // Chunk slots into rows of 3
   const rows: ParkingSlot[][] = [];
@@ -65,13 +69,13 @@ export default function DriverHome() {
             <Text style={styles.greetSub}>Find your perfect spot</Text>
           </View>
           <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(driver)/history' as any)}>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/driver/history' as any)}>
                 <Ionicons name="time-outline" size={18} color={Colors.white} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn}>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)/driver/session' as any)}> 
                 <Ionicons name="car-outline" size={18} color={Colors.white} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn}>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/(tabs)')}>
                 <Ionicons name="exit-outline" size={18} color={Colors.white} />
               </TouchableOpacity>
             </View>
@@ -144,12 +148,16 @@ export default function DriverHome() {
         </View>
       </ScrollView>
 
-      <BookingModal
-        slot={selectedSlot}
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onConfirm={handleConfirm}
-      />
+      <BookingSheet
+        visible={!!selectedSlot}
+        slot={selectedSlot ?? { id: 0, number: 'A1', zone: 'A', ratePerHour: 100 }}
+        userPhone="0712345678"
+        onClose={() => setSelectedSlot(null)}
+        onConfirmed={(ref) => {
+            setSelectedSlot(null);
+            console.log('Booked:', ref);
+        }}
+        />
     </SafeAreaView>
   );
 }

@@ -19,7 +19,7 @@ import { BlurView } from 'expo-blur';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SlotInfo {
-  id: number;
+  id: string;
   number: string;   // e.g. "C4"
   zone: string;     // e.g. "C"
   ratePerHour: number;
