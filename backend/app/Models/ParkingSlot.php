@@ -33,6 +33,12 @@ class ParkingSlot extends Model
             ->latest();
     }
 
+    public function activeSessions()
+    {
+        return $this->hasMany(CheckInSession::class, 'slot_id')
+                    ->whereNull('checkout_time');
+    }
+
     public function getHourlyRate()
     {
         return (float) $this ->hourly_rate;

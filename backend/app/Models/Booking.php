@@ -29,7 +29,7 @@ class Booking extends Model
             'expected_arrival' => 'datetime',
             'expected_departure' => 'datetime',
             'advance_fee_paid' => 'decimal:2',
-            'booking_status'=>'string',
+            //'booking_status'=>'string',
         ];
     }
 
@@ -41,5 +41,15 @@ class Booking extends Model
     public function slot()
     {
         return $this->belongsTo(ParkingSlot::class, 'slot_id');
+    }
+
+    public function checkInSessions()
+    {
+        return $this->hasMany(CheckInSession::class);
+    }
+
+    public function activeSession()
+    {
+        return $this->hasOne(CheckInSession::class)->whereNull('checkout_time');
     }
 }

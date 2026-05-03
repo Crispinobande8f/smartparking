@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Booking;
+namespace App\Http\Controllers\Mpesa;
 
 use App\Models\Booking;
 use App\Models\ParkingSlot;
