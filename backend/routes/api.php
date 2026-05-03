@@ -5,15 +5,20 @@ use App\Http\Controllers\Authentication\RegisterController;
 use App\Http\Controllers\Authentication\UserController;
 use App\Http\Controllers\Slots\SlotController;
 use App\Http\Controllers\Booking\BookingController;
-use App\Http\Controllers\Booking\MpesaCallbackController;
-use App\Http\Controllers\Booking\PricingRuleController;
+use App\Http\Controllers\Booking\PricingController;
 use App\Http\Controllers\Slots\SlotStatusController;
+use App\Http\Controllers\Api\AttendantController;
+use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\SessionController;
+use App\Http\Controllers\Mpesa\PaymentController;
+use App\Http\Controllers\Mpesa\ReceiptController;
+use App\Http\Controllers\Mpesa\MpesaController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 
 //Mpesa webhooks
-Route::post('v1/mpesa/callback', [MpesaCallbackController::class, 'handle']);
+Route::post('v1/mpesa/callback', [MpesaController::class, 'handle']);
 Route::post('v1/mpesa/checkout-callback', [PaymentController::class,'checkoutCallback']);
 
 //Authentication routes
@@ -36,7 +41,7 @@ Route:: prefix('v1') -> middleware('auth:sanctum')->group(function () {
     Route::get('/bookings', [BookingController::class, 'index']);
     Route::get('/bookings/{booking}', [BookingController::class, 'show']);
 
-    Route::apiResource('/pricing-rules', PricingRuleController::class)->only(['index','show']);
+    Route::apiResource('/pricing-rules', PricingController::class)->only(['index','show']);
 
     //Driver
     Route::post('/sessions/checkin', [SessionController::class, 'checkin']);
@@ -60,9 +65,9 @@ Route:: prefix('v1') -> middleware('auth:sanctum')->group(function () {
         Route::put('/slots/{slot}', [SlotController::class, 'update']);
         Route::delete('/slots/{slot}', [SlotController::class, 'destroy']);
 
-        Route::post('/pricing-rules', [PricingRuleController::class, 'store']);
-        Route::put('/pricing-rules/{rule}', [PricingRuleController::class, 'update']);
-        Route::delete('/pricing-rules/{rule}', [PricingRuleController::class, 'destroy']);
+        Route::post('/pricing-rules', [PricingController::class, 'store']);
+        Route::put('/pricing-rules/{rule}', [PricingController::class, 'update']);
+        Route::delete('/pricing-rules/{rule}', [PricingController::class, 'destroy']);
 
         Route::get('/admin/occupancy', [AdminController::class, 'occupancyDashboard']);
         Route::get('/admin/revenue',   [AdminController::class, 'revenueReport']);

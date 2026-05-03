@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 
-class PricingRuleController extends Controller
+class PricingController extends Controller
 {
     // GET /pricing-rules
     public function index(): JsonResponse

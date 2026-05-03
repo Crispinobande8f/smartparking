@@ -8,7 +8,7 @@ use App\Services\SlotStatusTransitioner;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 
-class MpesaCallbackController extends Controller
+class MpesaController extends Controller
 {
     private $transitioner;
 

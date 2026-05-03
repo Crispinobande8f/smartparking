@@ -93,6 +93,9 @@ const FIELDS: FormField[] = [
   },
 ];
 
+// ─── Kenyan phone regex — matches backend: /^07\d{8}$/ ───────────────────────
+const PHONE_REGEX = /^07\d{8}$/;
+
 // ─── Animated Input ───────────────────────────────────────────────────────────
 
 function FormInput({
@@ -110,7 +113,7 @@ function FormInput({
   showPassword?: boolean;
   onTogglePassword?: () => void;
   delay: number;
-  errorMessage?: string; // ← actual error string, not just a boolean
+  errorMessage?: string;
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(18)).current;
@@ -177,10 +180,7 @@ function FormInput({
         )}
       </View>
 
-      {/*
-        FIX: Never put <Ionicons> inside <Text> — React Native will crash.
-        Use a <View> row with the icon and a sibling <Text> instead.
-      */}
+      {/* Inline error — icon in a View, never inside <Text> */}
       {hasError && (
         <View style={styles.fieldErrorRow}>
           <Ionicons name="alert-circle" size={12} color="#EF4444" />
@@ -226,7 +226,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [errors, setErrors] = useState<Partial<FormState>>({});
-  const [globalError, setGlobalError] = useState(''); // for API/network errors not tied to a field
+  const [globalError, setGlobalError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -243,15 +243,24 @@ export default function RegisterScreen() {
     if (globalError) setGlobalError('');
   };
 
-  // ─── Client-side validation ───────────────────────────────────────────────
-
   const validate = (): boolean => {
     const newErrors: Partial<FormState> = {};
-    if (!form.fullName.trim()) newErrors.fullName = 'Full name is required';
-    if (!form.email.trim() || !form.email.includes('@')) newErrors.email = 'Enter a valid email address';
-    if (!form.phone.trim() || form.phone.length < 9) newErrors.phone = 'Enter a valid phone number';
-    if (!form.password || form.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
-    if (form.password !== form.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+
+    if (!form.fullName.trim())
+      newErrors.fullName = 'Full name is required';
+
+    if (!form.email.trim() || !form.email.includes('@'))
+      newErrors.email = 'Enter a valid email address';
+
+    if (!PHONE_REGEX.test(form.phone.trim()))
+      newErrors.phone = 'Enter a valid Kenyan number (07XXXXXXXX)';
+
+    if (!form.password || form.password.length < 8)
+      newErrors.password = 'Password must be at least 8 characters';
+
+    if (form.password !== form.confirmPassword)
+      newErrors.confirmPassword = 'Passwords do not match';
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -264,20 +273,22 @@ export default function RegisterScreen() {
 
     setLoading(true);
 
+    // Abort after 10 s so the button never stays stuck
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const timeout = setTimeout(() => controller.abort(), 10_000);
 
     try {
-      const res = await fetch('http://192.168.100.5:8000/v1/auth/register', {
+      const res = await fetch('http://192.168.100.10:8000/api/v1/auth/register', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.fullName,
-          email: form.email,
-          phone_number: form.phone,
+          name:                  form.fullName,
+          email:                 form.email,
+          phone_number:          form.phone,
+          // plate_number only sent when filled — it's optional on the backend
           ...(form.plate.trim() ? { plate_number: form.plate.trim() } : {}),
-          password: form.password,
+          password:              form.password,
           password_confirmation: form.confirmPassword,
         }),
       });
@@ -296,13 +307,18 @@ export default function RegisterScreen() {
             confirmPassword: data.errors.password_confirmation?.[0] ?? '',
           });
         } else {
+          // Non-field error (e.g. 500, server message)
           setGlobalError(data.message ?? 'Something went wrong. Please try again.');
         }
         return;
       }
 
+      // ── Success — persist token if returned ──────────────────────────────
+      // await AsyncStorage.setItem('token', data.token);
       router.replace('/(tabs)' as any);
+
     } catch (e: any) {
+      clearTimeout(timeout);
       if (e.name === 'AbortError') {
         setGlobalError('Request timed out — is the server running on 0.0.0.0?');
       } else {
@@ -369,15 +385,11 @@ export default function RegisterScreen() {
                   : undefined
               }
               delay={80 + i * 60}
-              errorMessage={errors[field.key]} // ← pass the string, not a boolean
+              errorMessage={errors[field.key]}
             />
           ))}
 
-          {/*
-            Two separate banners so there's no ambiguous logic:
-            1. Field errors  → fixed summary prompt
-            2. Global errors → actual API / network message
-          */}
+          {/* Banner 1 — field-level errors */}
           {hasFieldErrors && (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
@@ -387,6 +399,7 @@ export default function RegisterScreen() {
             </View>
           )}
 
+          {/* Banner 2 — API / network errors */}
           {!!globalError && (
             <View style={styles.errorBanner}>
               <Ionicons name="wifi-outline" size={16} color="#EF4444" />
@@ -576,7 +589,6 @@ const styles = StyleSheet.create({
   },
   eyeBtn: { padding: 4 },
 
-  // FIX: icon lives in a View beside a Text — never inside <Text>
   fieldErrorRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -20,17 +20,18 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [formData, setFormData] = useState({email:'', password:''})
 
-  const handleSignIn = () => {
-    if (email === 'attendant@parksmart.io') {
-      router.replace('/attendant' as any);
-    } else if(email === 'admin@parksmart.io') {
-      router.replace('/admin' as any);
-    } else if(email === 'county@parksmart.io'){
-      router.replace('/county' as any);
-    }else{
-      router.replace('/driver' as any);
-    }
+  const handleSignIn = async () => {
+    const res =  await fetch('http://192.168.100.10:8000/api/v1/auth/register',{
+      method: 'POST',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email,
+          phone_number:form.phone,
+        });
+    }) 
   };
 
   const fillDemo = (acc: typeof DEMO_ACCOUNTS[0]) => {
