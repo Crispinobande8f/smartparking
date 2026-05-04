@@ -106,7 +106,27 @@ export const shadows = {
 
 export const layout = { W, H };
 
-//admin themes
-
- 
+//admin themes 
 export const W_SCREEN = W;
+
+//county data themes
+export const C = {
+  navy: '#0F2D5E', navyLight: '#1A4A8A', dark: '#1A1A2E',
+  green: '#00C48C', greenLight: '#E8FBF5',
+  amber: '#F5A623', amberLight: '#FFF3CD',
+  red: '#E84040',  redLight: '#FDEAEA',
+  white: '#FFFFFF', surface: '#F7F8FA',
+  border: '#ECEEF2',
+  textPrimary: '#1A1A2E', textSecondary: '#8A94A6', textMuted: '#B0B7C3',
+};
+ 
+export const shadow = {
+  shadowColor: '#0F2D5E', shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.07, shadowRadius: 12, elevation: 4,
+};
+ 
+export const shadowStrong = {
+  shadowColor: '#0F2D5E', shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.13, shadowRadius: 20, elevation: 8,
+};
+ 
