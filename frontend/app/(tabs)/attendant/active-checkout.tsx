@@ -1,35 +1,22 @@
 /**
  * ActiveSessionsCheckOutScreen
  * File: app/(attendant)/active-checkout.tsx
- *
- * Shows all active sessions sorted: checkout-requested first, then others.
- * Tap any car → checkout summary modal with full bill breakdown.
  */
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  SafeAreaView,
-  Animated,
-  StatusBar,
-  RefreshControl,
-  Modal,
-  ActivityIndicator,
-  ScrollView,
-  Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView,
+  Animated, StatusBar, RefreshControl, Modal, ActivityIndicator,
+  ScrollView, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import {
-  MOCK_ACTIVE_SESSIONS,
+  fetchActiveSessions,
+  fetchCheckoutPreview,
+  confirmCheckoutSession,
   ActiveSession,
-  getElapsed,
-  getTotalBill,
-  getBalance,
-  formatTime,
-} from '@/constants/sessionData';
+  CheckoutPreview,
+} from '@/services/sessions';
+import { getElapsed, formatTime } from '@/constants/mockData';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 const C = {
@@ -39,40 +26,35 @@ const C = {
   white: '#FFFFFF', surface: '#F7F8FA', border: '#ECEEF2',
   textPrimary: '#1A1A2E', textSecondary: '#8A94A6', textMuted: '#B0B7C3',
 };
-const shadow = { shadowColor:'#0F2D5E', shadowOffset:{width:0,height:4}, shadowOpacity:0.08, shadowRadius:12, elevation:4 };
-const shadowStrong = { shadowColor:'#0F2D5E', shadowOffset:{width:0,height:10}, shadowOpacity:0.18, shadowRadius:28, elevation:12 };
+const shadow = { shadowColor: '#0F2D5E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 };
+const shadowStrong = { shadowColor: '#0F2D5E', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.18, shadowRadius: 28, elevation: 12 };
 
 // ─── Checkout Summary Modal ───────────────────────────────────────────────────
 function CheckoutModal({
   session,
+  preview,
   visible,
   onClose,
   onConfirm,
   loading,
 }: {
   session: ActiveSession | null;
+  preview: CheckoutPreview | null;         // ← server preview, not local calc
   visible: boolean;
   onClose: () => void;
   onConfirm: () => void;
   loading: boolean;
 }) {
   const slideAnim = useRef(new Animated.Value(400)).current;
-  const [liveElapsed, setLiveElapsed] = useState('');
-  const [liveBill,    setLiveBill]    = useState(0);
-  const [liveBalance, setLiveBalance] = useState(0);
+  const [elapsed, setElapsed] = useState('');
 
   useEffect(() => {
     if (visible && session) {
-      // Slide up
       Animated.spring(slideAnim, {
         toValue: 0, useNativeDriver: true, damping: 22, stiffness: 130,
       }).start();
-      // Update live figures
-      const update = () => {
-        setLiveElapsed(getElapsed(session.checkedInAt));
-        setLiveBill(getTotalBill(session.checkedInAt, session.ratePerHour));
-        setLiveBalance(getBalance(session.checkedInAt, session.ratePerHour, session.depositPaid));
-      };
+
+      const update = () => setElapsed(getElapsed(session.checkin_time));
       update();
       const interval = setInterval(update, 10000);
       return () => clearInterval(interval);
@@ -81,11 +63,10 @@ function CheckoutModal({
     }
   }, [visible, session]);
 
-  if (!session) return null;
+  if (!session || !preview) return null;
 
-  const totalBill    = liveBill    || getTotalBill(session.checkedInAt, session.ratePerHour);
-  const balanceDue   = liveBalance >= 0 ? liveBalance : getBalance(session.checkedInAt, session.ratePerHour, session.depositPaid);
-  const elapsed      = liveElapsed || getElapsed(session.checkedInAt);
+  const balanceDue = preview.balance_due;
+  const totalFee   = preview.total_fee;
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
@@ -94,10 +75,7 @@ function CheckoutModal({
 
         <Animated.View style={[mStyles.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-            {/* Handle */}
             <View style={mStyles.handle} />
-
-            {/* Title */}
             <Text style={mStyles.title}>Session Summary</Text>
             <Text style={mStyles.subtitle}>Review before confirming check-out</Text>
 
@@ -105,7 +83,7 @@ function CheckoutModal({
             <View style={mStyles.infoBlock}>
               <View style={mStyles.infoRow}>
                 <View style={mStyles.infoIconBox}>
-                  <Text style={{ fontSize:22 }}>🚗</Text>
+                  <Text style={{ fontSize: 22 }}>🚗</Text>
                 </View>
                 <View style={mStyles.infoContent}>
                   <Text style={mStyles.infoLabel}>Vehicle</Text>
@@ -114,26 +92,23 @@ function CheckoutModal({
               </View>
               <View style={mStyles.infoDivider} />
               <View style={mStyles.infoRow}>
-                <View style={[mStyles.infoIconBox, { backgroundColor:'#EEF1F6' }]}>
-                  <Text style={{ fontSize:22 }}>👤</Text>
+                <View style={[mStyles.infoIconBox, { backgroundColor: '#EEF1F6' }]}>
+                  <Text style={{ fontSize: 22 }}>👤</Text>
                 </View>
                 <View style={mStyles.infoContent}>
                   <Text style={mStyles.infoLabel}>Driver</Text>
-                  <Text style={mStyles.infoValue}>{session.driverName}</Text>
-                  <Text style={mStyles.infoSub}>{session.phone}</Text>
+                  <Text style={mStyles.infoValue}>{session.driver_name}</Text>
                 </View>
               </View>
               <View style={mStyles.infoDivider} />
               <View style={mStyles.infoRow}>
                 <View style={[mStyles.infoIconBox, { backgroundColor: C.greenLight }]}>
-                  <Text style={{ fontSize:22 }}>🅿️</Text>
+                  <Text style={{ fontSize: 22 }}>🅿️</Text>
                 </View>
                 <View style={mStyles.infoContent}>
                   <Text style={mStyles.infoLabel}>Slot</Text>
-                  <Text style={mStyles.infoValue}>Slot {session.slot} — {session.zone}</Text>
-                  <Text style={mStyles.infoSub}>
-                    Checked in: {formatTime(session.checkedInAt)}
-                  </Text>
+                  <Text style={mStyles.infoValue}>Slot {session.slot} — Zone {session.zone}</Text>
+                  <Text style={mStyles.infoSub}>Checked in: {formatTime(session.checkin_time)}</Text>
                 </View>
               </View>
             </View>
@@ -145,26 +120,46 @@ function CheckoutModal({
                 <Text style={mStyles.timeBannerLabel}>Time Parked</Text>
                 <Text style={mStyles.timeBannerValue}>{elapsed}</Text>
               </View>
-              <Text style={mStyles.timeBannerRate}>@ KES {session.ratePerHour}/hr</Text>
+              <Text style={mStyles.timeBannerRate}>@ KES {session.hourly_rate}/hr</Text>
             </View>
 
-            {/* Bill Breakdown */}
+            {/* Bill Breakdown — all figures from server preview */}
             <View style={mStyles.billCard}>
               <Text style={mStyles.billCardTitle}>💰 Bill Breakdown</Text>
 
               <View style={mStyles.billRow}>
+                <Text style={mStyles.billRowLabel}>Base Fee</Text>
+                <Text style={mStyles.billRowValue}>KES {preview.base_fee}</Text>
+              </View>
+
+              {preview.is_overtime && (
+                <>
+                  <View style={mStyles.billDivider} />
+                  <View style={mStyles.billRow}>
+                    <View>
+                      <Text style={[mStyles.billRowLabel, { color: C.red }]}>⚠️ Overtime Fee</Text>
+                    </View>
+                    <Text style={[mStyles.billRowValue, { color: C.red }]}>
+                      + KES {preview.late_fee}
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              <View style={mStyles.billDivider} />
+              <View style={mStyles.billRow}>
                 <Text style={mStyles.billRowLabel}>Total Parking Charge</Text>
-                <Text style={mStyles.billRowValue}>KES {totalBill}</Text>
+                <Text style={mStyles.billRowValue}>KES {totalFee}</Text>
               </View>
               <View style={mStyles.billDivider} />
 
               <View style={mStyles.billRow}>
                 <View>
-                  <Text style={mStyles.billRowLabel}>Deposit Paid</Text>
+                  <Text style={mStyles.billRowLabel}>Advance Paid</Text>
                   <Text style={mStyles.billRowSub}>Paid at time of booking</Text>
                 </View>
                 <Text style={[mStyles.billRowValue, { color: C.green }]}>
-                  − KES {session.depositPaid}
+                  − KES {preview.advance_paid}
                 </Text>
               </View>
               <View style={mStyles.billDivider} />
@@ -176,19 +171,27 @@ function CheckoutModal({
                 </Text>
               </View>
 
-              {balanceDue === 0 && (
+              {balanceDue <= 0 && (
                 <View style={mStyles.paidBadge}>
-                  <Text style={mStyles.paidBadgeText}>✓ Fully Paid by Deposit</Text>
+                  <Text style={mStyles.paidBadgeText}>✓ Fully Paid by Advance</Text>
+                </View>
+              )}
+
+              {balanceDue > 0 && (
+                <View style={[mStyles.paidBadge, { backgroundColor: '#FEF2F2' }]}>
+                  <Text style={[mStyles.paidBadgeText, { color: C.red }]}>
+                    📱 M-Pesa prompt will be sent to driver
+                  </Text>
                 </View>
               )}
             </View>
 
-            {/* Summary totals row */}
+            {/* Summary totals */}
             <View style={mStyles.summaryTotals}>
               <View style={mStyles.totalItem}>
-                <Text style={mStyles.totalItemLabel}>Deposit</Text>
+                <Text style={mStyles.totalItemLabel}>Advance</Text>
                 <Text style={[mStyles.totalItemValue, { color: C.green }]}>
-                  KES {session.depositPaid}
+                  KES {preview.advance_paid}
                 </Text>
               </View>
               <View style={mStyles.totalDivider} />
@@ -201,8 +204,8 @@ function CheckoutModal({
               <View style={mStyles.totalDivider} />
               <View style={mStyles.totalItem}>
                 <Text style={mStyles.totalItemLabel}>Total</Text>
-                <Text style={[mStyles.totalItemValue, { color: C.navy }]}>
-                  KES {totalBill}
+                <Text style={[mStyles.totalItemValue, { color: C.white }]}>
+                  KES {totalFee}
                 </Text>
               </View>
             </View>
@@ -229,70 +232,6 @@ function CheckoutModal({
   );
 }
 
-const mStyles = StyleSheet.create({
-  overlay: { flex:1, backgroundColor:'rgba(10,10,15,0.6)', justifyContent:'flex-end' },
-  sheet: {
-    backgroundColor: C.white,
-    borderTopLeftRadius:32, borderTopRightRadius:32,
-    paddingHorizontal:24, paddingBottom:48, maxHeight:'92%',
-    ...shadowStrong,
-  },
-  handle: { width:40, height:4, backgroundColor:C.border, borderRadius:2, alignSelf:'center', marginTop:10, marginBottom:20 },
-  title: { fontSize:22, fontWeight:'700', color:C.textPrimary },
-  subtitle: { fontSize:13, color:C.textSecondary, marginTop:4, marginBottom:20 },
-
-  // Info block
-  infoBlock: { backgroundColor:C.surface, borderRadius:16, marginBottom:14 },
-  infoRow: { flexDirection:'row', alignItems:'center', padding:14 },
-  infoIconBox: { width:46, height:46, borderRadius:13, backgroundColor:C.amberLight, alignItems:'center', justifyContent:'center', marginRight:14 },
-  infoContent: { flex:1 },
-  infoLabel: { fontSize:11, color:C.textMuted, textTransform:'uppercase', letterSpacing:0.5 },
-  infoValue: { fontSize:15, fontWeight:'700', color:C.textPrimary, marginTop:2 },
-  infoSub: { fontSize:12, color:C.textSecondary, marginTop:1 },
-  infoDivider: { height:1, backgroundColor:C.border, marginHorizontal:14 },
-
-  // Time banner
-  timeBanner: {
-    flexDirection:'row', alignItems:'center', gap:12,
-    backgroundColor: C.navy, borderRadius:14, padding:16, marginBottom:14,
-  },
-  timeBannerIcon: { fontSize:24 },
-  timeBannerLabel: { fontSize:11, color:'rgba(255,255,255,0.6)', marginBottom:2 },
-  timeBannerValue: { fontSize:22, fontWeight:'800', color:C.white },
-  timeBannerRate: { marginLeft:'auto', fontSize:12, color:'rgba(255,255,255,0.6)', fontWeight:'500' },
-
-  // Bill card
-  billCard: { backgroundColor:C.surface, borderRadius:16, padding:16, marginBottom:14 },
-  billCardTitle: { fontSize:14, fontWeight:'700', color:C.textPrimary, marginBottom:14 },
-  billRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10 },
-  billRowLabel: { fontSize:14, color:C.textSecondary },
-  billRowSub: { fontSize:11, color:C.textMuted, marginTop:2 },
-  billRowValue: { fontSize:15, fontWeight:'700', color:C.textPrimary },
-  billDivider: { height:1, backgroundColor:C.border },
-  billTotalRow: { paddingTop:14 },
-  billTotalLabel: { fontSize:15, fontWeight:'700', color:C.textPrimary },
-  billTotalValue: { fontSize:22, fontWeight:'800' },
-  paidBadge: { backgroundColor: C.greenLight, borderRadius:8, padding:10, marginTop:10, alignItems:'center' },
-  paidBadgeText: { fontSize:13, color: C.green, fontWeight:'700' },
-
-  // Summary totals
-  summaryTotals: {
-    flexDirection:'row', backgroundColor:C.navy, borderRadius:14,
-    padding:16, marginBottom:20,
-  },
-  totalItem: { flex:1, alignItems:'center' },
-  totalItemLabel: { fontSize:11, color:'rgba(255,255,255,0.55)', marginBottom:4 },
-  totalItemValue: { fontSize:16, fontWeight:'800' },
-  totalDivider: { width:1, backgroundColor:'rgba(255,255,255,0.15)' },
-
-  // Buttons
-  btnRow: { flexDirection:'row', gap:12 },
-  cancelBtn: { flex:1, height:54, borderRadius:14, borderWidth:1.5, borderColor:C.border, alignItems:'center', justifyContent:'center' },
-  cancelText: { fontSize:15, fontWeight:'600', color:C.textSecondary },
-  confirmBtn: { flex:2, height:54, borderRadius:14, backgroundColor:C.red, alignItems:'center', justifyContent:'center' },
-  confirmText: { fontSize:15, fontWeight:'700', color:C.white },
-});
-
 // ─── Session Card ─────────────────────────────────────────────────────────────
 function SessionCard({
   session,
@@ -306,24 +245,24 @@ function SessionCard({
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(14)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const [elapsed, setElapsed] = useState(getElapsed(session.checkedInAt));
+  const [elapsed, setElapsed] = useState(getElapsed(session.checkin_time));
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim,  { toValue:1, duration:320, delay: index * 70, useNativeDriver:true }),
-      Animated.timing(slideAnim, { toValue:0, duration:320, delay: index * 70, useNativeDriver:true }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 320, delay: index * 70, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 320, delay: index * 70, useNativeDriver: true }),
     ]).start();
-    const interval = setInterval(() => setElapsed(getElapsed(session.checkedInAt)), 60000);
+    const interval = setInterval(() => setElapsed(getElapsed(session.checkin_time)), 60000);
     return () => clearInterval(interval);
   }, []);
 
-  const pressIn  = () => Animated.spring(scaleAnim, { toValue:0.97, useNativeDriver:true, speed:50 }).start();
-  const pressOut = () => Animated.spring(scaleAnim, { toValue:1.0,  useNativeDriver:true, speed:50 }).start();
+  const pressIn  = () => Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start();
+  const pressOut = () => Animated.spring(scaleAnim, { toValue: 1.0,  useNativeDriver: true, speed: 50 }).start();
 
-  const isRequested = session.checkoutRequested;
+  const isRequested = session.checkout_requested;
 
   return (
-    <Animated.View style={{ opacity: fadeAnim, transform:[{ translateY: slideAnim },{ scale: scaleAnim }] }}>
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }, { scale: scaleAnim }] }}>
       <TouchableOpacity
         style={[styles.card, isRequested && styles.cardRequested]}
         onPress={onPress}
@@ -331,18 +270,15 @@ function SessionCard({
         onPressOut={pressOut}
         activeOpacity={1}
       >
-        {/* Left accent bar */}
         <View style={[styles.accentBar, { backgroundColor: isRequested ? C.red : C.green }]} />
-
         <View style={styles.cardBody}>
-          {/* Top: icon + plate/name + checkout badge */}
           <View style={styles.topRow}>
             <View style={[styles.carIconBox, { backgroundColor: isRequested ? C.redLight : C.greenLight }]}>
-              <Text style={{ fontSize:22 }}>🚗</Text>
+              <Text style={{ fontSize: 22 }}>🚗</Text>
             </View>
             <View style={styles.topInfo}>
               <Text style={styles.plateTxt}>{session.plate}</Text>
-              <Text style={styles.driverTxt}>{session.driverName}</Text>
+              <Text style={styles.driverTxt}>{session.driver_name}</Text>
             </View>
             {isRequested && (
               <View style={styles.requestedBadge}>
@@ -352,7 +288,6 @@ function SessionCard({
             )}
           </View>
 
-          {/* Meta chips */}
           <View style={styles.chipsRow}>
             <View style={styles.chip}>
               <Text style={styles.chipIcon}>🅿️</Text>
@@ -365,16 +300,13 @@ function SessionCard({
             <View style={styles.chip}>
               <Text style={styles.chipIcon}>💵</Text>
               <Text style={[styles.chipTxt, { color: C.green }]}>
-                KES {getTotalBill(session.checkedInAt, session.ratePerHour)}
+                KES {session.advance_paid}↑
               </Text>
             </View>
           </View>
 
-          {/* Bottom: check-in time + tap hint */}
           <View style={styles.bottomRow}>
-            <Text style={styles.checkinTime}>
-              In since {formatTime(session.checkedInAt)}
-            </Text>
+            <Text style={styles.checkinTime}>In since {formatTime(session.checkin_time)}</Text>
             {isRequested
               ? <Text style={styles.tapHintRed}>Tap to check out →</Text>
               : <Text style={styles.tapHint}>Tap to view →</Text>}
@@ -386,7 +318,7 @@ function SessionCard({
 }
 
 // ─── Section Header ────────────────────────────────────────────────────────────
-function SectionHeader({ title, count, urgent }: { title:string; count:number; urgent?:boolean }) {
+function SectionHeader({ title, count, urgent }: { title: string; count: number; urgent?: boolean }) {
   return (
     <View style={styles.sectionHeader}>
       {urgent && <View style={styles.urgentDot} />}
@@ -400,58 +332,120 @@ function SectionHeader({ title, count, urgent }: { title:string; count:number; u
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ActiveCheckOutScreen() {
-  const [sessions, setSessions] = useState(MOCK_ACTIVE_SESSIONS);
-  const [selected, setSelected] = useState<ActiveSession | null>(null);
+  const [sessions, setSessions]       = useState<ActiveSession[]>([]);
+  const [selected, setSelected]       = useState<ActiveSession | null>(null);
+  const [preview, setPreview]         = useState<CheckoutPreview | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [confirming, setConfirming]   = useState(false);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    Animated.timing(headerAnim, { toValue:1, duration:400, useNativeDriver:true }).start();
+  const loadSessions = useCallback(async () => {
+    try {
+      const data = await fetchActiveSessions();
+      setSessions(data);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not load sessions.');
+    } finally {
+      setInitialLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  // Sort: checkout-requested first, then by elapsed time desc
+  useEffect(() => {
+    loadSessions();
+    Animated.timing(headerAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  }, []);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadSessions();
+  };
+
   const sorted = [...sessions].sort((a, b) => {
-    if (a.checkoutRequested && !b.checkoutRequested) return -1;
-    if (!a.checkoutRequested && b.checkoutRequested) return 1;
-    return new Date(a.checkedInAt).getTime() - new Date(b.checkedInAt).getTime();
+    if (a.checkout_requested && !b.checkout_requested) return -1;
+    if (!a.checkout_requested && b.checkout_requested) return 1;
+    return new Date(a.checkin_time).getTime() - new Date(b.checkin_time).getTime();
   });
 
-  const requestedSessions = sorted.filter(s => s.checkoutRequested);
-  const activeSessions    = sorted.filter(s => !s.checkoutRequested);
+  const requestedSessions = sorted.filter(s => s.checkout_requested);
+  const activeSessions    = sorted.filter(s => !s.checkout_requested);
 
-  const handleCardPress = (session: ActiveSession) => {
+  const handleCardPress = async (session: ActiveSession) => {
     setSelected(session);
+    setPreview(null);
     setModalVisible(true);
+    setLoadingPreview(true);
+
+    try {
+      const bill = await fetchCheckoutPreview(session.session_id);
+      setPreview(bill);
+    } catch (e: any) {
+      Alert.alert('Error', 'Could not load billing preview.');
+      setModalVisible(false);
+    } finally {
+      setLoadingPreview(false);
+    }
   };
 
-  const handleConfirmCheckout = () => {
-    if (!selected) return;
-    setLoading(true);
-    // TODO: POST /api/v1/sessions/:id/checkout
-    setTimeout(() => {
-      setLoading(false);
+  const handleConfirmCheckout = async () => {
+    if (!selected || !preview) return;
+    setConfirming(true);
+
+    try {
+      const result = await confirmCheckoutSession(selected.session_id);
+
       setModalVisible(false);
-      setSessions(prev => prev.filter(s => s.id !== selected.id));
-      const total = getTotalBill(selected.checkedInAt, selected.ratePerHour);
-      const balance = getBalance(selected.checkedInAt, selected.ratePerHour, selected.depositPaid);
+      setSelected(null);
+      setPreview(null);
+
+      // STK push path — balance owed, M-Pesa prompt sent to driver
+      if (result.checkout_request_id) {
+        Alert.alert(
+          'Payment Required 📱',
+          `M-Pesa prompt sent to driver.\nBalance due: KES ${preview.balance_due}`,
+          [{
+            text: 'OK',
+            onPress: () => {
+              // Remove from list — session is now awaiting_payment, not active
+              setSessions(prev => prev.filter(s => s.session_id !== selected.session_id));
+            },
+          }]
+        );
+        return;
+      }
+
+      // Zero-balance path — fully complete
+      setSessions(prev => prev.filter(s => s.session_id !== selected.session_id));
       Alert.alert(
         'Checked Out ✅',
-        `${selected.plate} — Slot ${selected.slot}\n` +
-        `Time: ${getElapsed(selected.checkedInAt)}\n` +
-        `Total: KES ${total} | Balance: KES ${balance}`,
+        `${selected.plate} — Slot ${selected.slot}\nTotal: KES ${preview.total_fee}`,
         [{ text: 'Done' }]
       );
-      setSelected(null);
-    }, 1600);
+    } catch (e: any) {
+      Alert.alert('Checkout Failed', e.message ?? 'Something went wrong.');
+    } finally {
+      setConfirming(false);
+    }
   };
+
+  const listData = [
+    ...(requestedSessions.length > 0
+      ? [{ type: 'header', id: 'h1', title: 'Requesting Checkout', count: requestedSessions.length, urgent: true }]
+      : []),
+    ...requestedSessions.map(s => ({ type: 'session', ...s })),
+    ...(activeSessions.length > 0
+      ? [{ type: 'header', id: 'h2', title: 'Still Parked', count: activeSessions.length, urgent: false }]
+      : []),
+    ...activeSessions.map(s => ({ type: 'session', ...s })),
+  ];
 
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor={C.navy} />
 
-      {/* Header */}
       <Animated.View style={[styles.header, { opacity: headerAnim }]}>
         <SafeAreaView>
           <View style={styles.headerRow}>
@@ -471,7 +465,6 @@ export default function ActiveCheckOutScreen() {
             </View>
           </View>
 
-          {/* Stats strip */}
           <View style={styles.statsStrip}>
             <View style={styles.stripItem}>
               <Text style={styles.stripNum}>{sessions.length}</Text>
@@ -491,50 +484,51 @@ export default function ActiveCheckOutScreen() {
         </SafeAreaView>
       </Animated.View>
 
-      {/* Sessions list with section headers */}
-      <FlatList
-        data={[
-          ...(requestedSessions.length > 0 ? [{ type:'header', id:'h1', title:`Requesting Checkout`, count: requestedSessions.length, urgent: true }] : []),
-          ...requestedSessions.map(s => ({ type:'session', ...s })),
-          ...(activeSessions.length > 0   ? [{ type:'header', id:'h2', title:'Still Parked', count: activeSessions.length, urgent: false }] : []),
-          ...activeSessions.map(s => ({ type:'session', ...s })),
-        ]}
-        keyExtractor={(item: any) => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setTimeout(()=>setRefreshing(false),1000); }} tintColor={C.green} />
-        }
-        renderItem={({ item, index }: { item: any; index: number }) => {
-          if (item.type === 'header') {
-            return <SectionHeader title={item.title} count={item.count} urgent={item.urgent} />;
+      {initialLoading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={C.navy} />
+        </View>
+      ) : (
+        <FlatList
+          data={listData}
+          keyExtractor={(item: any) => item.id ?? item.session_id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.green} />
           }
-          const session = item as ActiveSession;
-          const sessionIndex = sorted.findIndex(s => s.id === session.id);
-          return (
-            <SessionCard
-              session={session}
-              index={sessionIndex}
-              onPress={() => handleCardPress(session)}
-            />
-          );
-        }}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🏁</Text>
-            <Text style={styles.emptyTitle}>No Active Sessions</Text>
-            <Text style={styles.emptySub}>All vehicles have been checked out</Text>
-          </View>
-        }
-      />
+          renderItem={({ item, index }: { item: any; index: number }) => {
+            if (item.type === 'header') {
+              return <SectionHeader title={item.title} count={item.count} urgent={item.urgent} />;
+            }
+            const session = item as ActiveSession;
+            const sessionIndex = sorted.findIndex(s => s.session_id === session.session_id);
+            return (
+              <SessionCard
+                session={session}
+                index={sessionIndex}
+                onPress={() => handleCardPress(session)}
+              />
+            );
+          }}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🏁</Text>
+              <Text style={styles.emptyTitle}>No Active Sessions</Text>
+              <Text style={styles.emptySub}>All vehicles have been checked out</Text>
+            </View>
+          }
+        />
+      )}
 
-      {/* Checkout modal */}
+      {/* Loading preview spinner shown inside modal area */}
       <CheckoutModal
         session={selected}
+        preview={loadingPreview ? null : preview}
         visible={modalVisible}
-        onClose={() => { setModalVisible(false); setSelected(null); }}
+        onClose={() => { setModalVisible(false); setSelected(null); setPreview(null); }}
         onConfirm={handleConfirmCheckout}
-        loading={loading}
+        loading={confirming || loadingPreview}
       />
     </View>
   );
@@ -598,6 +592,9 @@ const styles = StyleSheet.create({
   checkinTime: { fontSize:11, color:C.textMuted },
   tapHint: { fontSize:12, fontWeight:'600', color:C.green },
   tapHintRed: { fontSize:12, fontWeight:'600', color:C.red },
+
+  // Loading wrapper for initial load spinner
+  loadingWrap: { flex:1, alignItems:'center', justifyContent:'center', paddingTop:28 },
 
   // Empty
   empty: { alignItems:'center', paddingVertical:80 },

@@ -10,6 +10,7 @@ use App\Models\Receipt;
 use App\Services\BillingService;
 use App\Services\MpesaService;
 use Carbon\Carbon;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -126,8 +127,9 @@ class SessionController extends Controller
 
         return response()->json([
             'session_id'             => $session->session_id,
+            'session_status'         => $session->session_status,
             'slot'                   => optional($session->slot)->slot_number,
-            'slot_type'              => optional($session->slot)->type,
+            'slot_type'              => optional($session->slot)->slot_type,
             'checkin_time'           => $checkinTime->toIso8601String(),
             'elapsed_minutes'        => $elapsedMins,
             'booked_departure_time'  => optional($session->booking)->expected_departure,
@@ -162,15 +164,20 @@ class SessionController extends Controller
     // ------------------------------------------------------------------ //
     //  POST /v1/sessions/{id}/checkout
     // ------------------------------------------------------------------ //
-    public function confirmCheckout(Request $request, string $sessionId): JsonResponse
+  public function confirmCheckout(Request $request, string $sessionId): JsonResponse
     {
         $session = $this->resolveActiveSession($sessionId);
         if ($session instanceof JsonResponse) return $session;
 
+        // Allow attendants to check out any session; drivers can only check out their own
+        $isAttendant = $request->user()->role === 'attendant';
+        if (!$isAttendant && $session->user_id !== $request->user()->id) {
+            return response()->json(['message' => 'This session does not belong to you.'], 403);
+        }
+
         $checkoutTime = Carbon::now();
         $breakdown    = $this->billing->calculate($session);
 
-        // Persist final billing + checkout timestamp inside a transaction
         DB::transaction(function () use ($session, $checkoutTime, $breakdown) {
             $session->update([
                 'checkout_time'  => $checkoutTime,
@@ -179,7 +186,7 @@ class SessionController extends Controller
                 'late_fee'       => $breakdown['late_fee'],
                 'total_fee'      => $breakdown['total_fee'],
                 'advance_paid'   => $breakdown['advance_paid'],
-                'balance_paid' => $breakdown['balance_due'],
+                'balance_paid'   => $breakdown['balance_due'],
             ]);
         });
 
@@ -188,28 +195,29 @@ class SessionController extends Controller
             return $this->completeSessionAndRelease($session, $breakdown, checkoutTime: $checkoutTime);
         }
 
-        // Balance owed: trigger STK Push
         try {
-            $user  = $session->user ?? $request->user();
-            $phone = $user->phone_number; // e.g. "2547XXXXXXXX"
+            $driver = $session->user;
+            if (!$driver || !$driver->phone_number) {
+                return response()->json(['message' => 'Driver phone number not found.'], 422);
+            }
 
             $mpesaResponse = $this->mpesa->stkPush(
-                phone:       $phone,
+                phone:       $driver->phone_number,
                 amount:      $breakdown['balance_due'],
                 accountRef:  $session->session_id,
                 description: 'Parking Balance'
             );
 
             $session->update([
-                'session_status' => 'awaiting_payment',
-                'mpesa_checkout_id'   => $mpesaResponse['CheckoutRequestID'] ?? null,
+                'session_status'    => 'awaiting_payment',
+                'mpesa_checkout_id' => $mpesaResponse['CheckoutRequestID'] ?? null,
             ]);
 
             return response()->json([
-                'message'               => 'STK Push sent. Awaiting payment confirmation.',
-                'session_id'            => $session->session_id,
-                'checkout_request_id'   => $mpesaResponse['CheckoutRequestID'] ?? null,
-                'billing'               => $breakdown,
+                'message'             => 'STK Push sent. Awaiting payment confirmation.',
+                'session_id'          => $session->session_id,
+                'checkout_request_id' => $mpesaResponse['CheckoutRequestID'] ?? null,
+                'billing'             => $breakdown,
             ]);
 
         } catch (\Throwable $e) {
@@ -247,7 +255,7 @@ class SessionController extends Controller
         Carbon $checkoutTime
     ): JsonResponse {
         DB::transaction(function () use ($session) {
-            $session->update(['status' => 'completed']);
+            $session->update(['session_status' => 'completed']);
             $session->booking?->update(['booking_status' => 'completed']);
             ParkingSlot::where('id', $session->slot_id)->update(['status' => 'available']);
 
@@ -271,6 +279,67 @@ class SessionController extends Controller
         ]);
     }
 
+    public function show(Request $request, string $sessionId): JsonResponse
+    {
+        $session = CheckInSession::with(['booking.slot', 'user', 'slot'])
+            ->where('session_id', $sessionId)
+            ->first();
+
+        if (!$session) {
+            return response()->json(['message' => 'Session not found.'], 404);
+        }
+
+        // Only the session owner (or attendant/admin) may view it
+        $viewer = $request->user();
+        $isPrivileged = in_array($viewer->role, ['attendant', 'admin']);
+        if (!$isPrivileged && $session->user_id !== $viewer->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $slotType = optional($session->slot)->slot_type ?? 'standard';
+        $rate = \App\Models\PricingRule::where('slot_type', $slotType)
+            ->where('is_active', true)
+            ->value('hourly_rate') ?? 100;
+
+        return response()->json([
+            // Nested shape the frontend expects
+            'driver' => [
+                'name'  => optional($session->user)->name,
+                'phone' => optional($session->user)->phone_number,
+            ],
+            'vehicle' => [
+                'plate' => $session->booking->vehicle_plate  ?? null,
+                'model' => $session->booking->vehicle_model  ?? null,
+                'color' => $session->booking->vehicle_color  ?? null,
+            ],
+            'slot'         => optional($session->slot)->slot_number,
+            'lot'          => optional($session->slot)->location_description,
+            'checkin_time' => Carbon::parse($session->checkin_time)->toIso8601String(),
+            'deposit_paid' => $session->advance_paid,
+            'rate_per_hour'=> $rate,
+        ]);
+    }
+
+    public function releaseAfterPayment(string $sessionId): JsonResponse
+    {
+        $session = CheckInSession::with(['booking', 'slot', 'user'])
+            ->where('session_id', $sessionId)
+            ->where('session_status', 'awaiting_payment')
+            ->first();
+
+        if (!$session) {
+            return response()->json(['message' => 'Session not found or not awaiting payment.'], 404);
+        }
+
+        $breakdown = $this->billing->calculate($session);
+
+        return $this->completeSessionAndRelease(
+            $session,
+            $breakdown,
+            checkoutTime: Carbon::parse($session->checkout_time)
+        );
+    }
+
     private function isOvertime(CheckInSession $session): bool
     {
         if (!$session->booking) return false;
@@ -284,6 +353,6 @@ class SessionController extends Controller
         }
 
         $expectedDeparture = Carbon::parse($session->booking->expected_departure);
-        return Carbon::now()->gt($expectedDeparture->addMinutes(BillingService::GRACE_PERIOD_MIN));
+        return Carbon::now()->gt($expectedDeparture->addMinutes($gracePeriod));
     }
 }

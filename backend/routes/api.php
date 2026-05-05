@@ -37,22 +37,26 @@ Route:: prefix('v1') -> middleware('auth:sanctum')->group(function () {
     Route::patch('/slots/{slot}/status',  [SlotStatusController::class, 'transition']);
     Route::get('/slots/{slot}/history',   [SlotStatusController::class, 'history']);
 
+    //Driver
+    Route::post('/bookings/quote', [BookingController::class, 'quote']);
     Route::post('/bookings', [BookingController::class, 'store']);
     Route::get('/bookings', [BookingController::class, 'index']);
     Route::get('/bookings/{booking}', [BookingController::class, 'show']);
 
     Route::apiResource('/pricing-rules', PricingController::class)->only(['index','show']);
 
-    //Driver
+    //Attendant
     Route::post('/sessions/checkin', [SessionController::class, 'checkin']);
     Route::get('/sessions/active',[SessionController::class, 'activeSession']);
     Route::get('/sessions/{id}/checkout-preview',[SessionController::class, 'initiateCheckout']);
     Route::post('/sessions/{id}/checkout', [SessionController::class, 'confirmCheckout']);
     Route::get('/sessions/{id}/receipt', [ReceiptController::class, 'show']);
+    Route::get('/sessions/{id}', [SessionController::class, 'show']);
 
-    //Attendant
+
     Route::middleware('role:attendant,admin')->group(function () {
         Route::post('/attendant/checkin', [AttendantController::class, 'assistCheckin']);
+        Route::get('/attendant/sessions', [AttendantController::class, 'activeSessions']);
     });
 
     //Admin

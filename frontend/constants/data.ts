@@ -5,6 +5,8 @@ export interface ParkingSlot {
   zone: string;
   number: number;
   status: SlotStatus;
+  slot_number:string;
+  phone_number:string;
 }
 
 export interface BookingRecord {
@@ -27,36 +29,6 @@ export interface ActiveSession {
   amount: number;
 }
 
-export const PARKING_SLOTS: ParkingSlot[] = [
-  // Zone A
-  { id: 'A1', zone: 'A', number: 1, status: 'free' },
-  { id: 'A2', zone: 'A', number: 2, status: 'taken' },
-  { id: 'A3', zone: 'A', number: 3, status: 'free' },
-  { id: 'A4', zone: 'A', number: 4, status: 'reserved' },
-  { id: 'A5', zone: 'A', number: 5, status: 'taken' },
-  { id: 'A6', zone: 'A', number: 6, status: 'free' },
-  // Zone B
-  { id: 'B1', zone: 'B', number: 1, status: 'taken' },
-  { id: 'B2', zone: 'B', number: 2, status: 'free' },
-  { id: 'B3', zone: 'B', number: 3, status: 'free' },
-  { id: 'B4', zone: 'B', number: 4, status: 'leaving' },
-  { id: 'B5', zone: 'B', number: 5, status: 'taken' },
-  { id: 'B6', zone: 'B', number: 6, status: 'reserved' },
-  // Zone C
-  { id: 'C1', zone: 'C', number: 1, status: 'free' },
-  { id: 'C2', zone: 'C', number: 2, status: 'free' },
-  { id: 'C3', zone: 'C', number: 3, status: 'taken' },
-  { id: 'C4', zone: 'C', number: 4, status: 'free' },
-  { id: 'C5', zone: 'C', number: 5, status: 'taken' },
-  { id: 'C6', zone: 'C', number: 6, status: 'free' },
-  // Zone D
-  { id: 'D1', zone: 'D', number: 1, status: 'taken' },
-  { id: 'D2', zone: 'D', number: 2, status: 'free' },
-  { id: 'D3', zone: 'D', number: 3, status: 'free' },
-  { id: 'D4', zone: 'D', number: 4, status: 'reserved' },
-  { id: 'D5', zone: 'D', number: 5, status: 'free' },
-  { id: 'D6', zone: 'D', number: 6, status: 'taken' },
-];
 
 export const BOOKING_HISTORY: BookingRecord[] = [
   { id: '1', slot: 'A2', zone: 'Zone A', plate: 'KBZ 412G', status: 'active', time: '30/4 10:04' },

@@ -22,7 +22,7 @@ class PricingController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string',
-            'slot_type' => 'required|in:standard,disabled,VIP',
+            'slot_type' => 'required|in:standard,disabled,VIP,premium,economy',
             'hourly_rate' => 'required|numeric|min:0',
             'late_fee_per_hour' => 'required|numeric|min:0',
             'advance_payment_percentage' => 'required|numeric|min:0|max:1',
@@ -42,7 +42,7 @@ class PricingController extends Controller
     {
         $validated = $request->validate([
             'name' => 'sometimes|string',
-            'slot_type'   => 'sometimes|in:standard,disabled,VIP',
+            'slot_type' => 'sometimes|in:standard,disabled,VIP,premium,economy',
             'hourly_rate' => 'sometimes|numeric|min:0',
             'late_fee_per_hour' => 'sometimes|numeric|min:0',
             'advance_payment_percentage' => 'sometimes|numeric|min:0|max:1',

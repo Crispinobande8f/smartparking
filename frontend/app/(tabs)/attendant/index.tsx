@@ -16,12 +16,8 @@ import {
   RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
-import {
-  MOCK_ACTIVE_SESSIONS,
-  ActiveSession,
-  getElapsed,
-  getAmount,
-} from '@/constants/mockData';
+import { fetchActiveSessions, ActiveSession } from '@/services/sessions';
+import { getElapsed, getAmount } from '@/constants/mockData';
 import { colors, shadows, scale } from '@/constants/theme';
 
 // ─── Sub-components ────────────────────────────────────────────────────────
@@ -61,18 +57,11 @@ function StatCard({
 }
 
 /** Single active session row */
-function SessionRow({
-  session,
-  index,
-}: {
-  session: ActiveSession;
-  index: number;
-}) {
+function SessionRow({ session, index }: { session: ActiveSession; index: number }) {
   const slideAnim = useRef(new Animated.Value(20)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const [elapsed, setElapsed] = useState(getElapsed(session.startTime));
-  const [amount, setAmount] = useState(getAmount(session.startTime, session.ratePerHour));
-
+  const [elapsed, setElapsed] = useState(getElapsed(session.checkin_time)); 
+  const [amount, setAmount]   = useState(getAmount(session.checkin_time, session.hourly_rate));
   // Staggered entry animation
   useEffect(() => {
     Animated.parallel([
@@ -94,8 +83,8 @@ function SessionRow({
   // Live timer updates every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed(getElapsed(session.startTime));
-      setAmount(getAmount(session.startTime, session.ratePerHour));
+      setElapsed(getElapsed(session.checkin_time));
+      setAmount(getAmount(session.checkin_time, session.hourly_rate));
     }, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -113,7 +102,7 @@ function SessionRow({
       <View style={styles.sessionInfo}>
         <Text style={styles.sessionPlate}>{session.plate}</Text>
         <Text style={styles.sessionSub}>
-          Slot {session.slot} · {session.driverName}
+          Slot {session.slot} · {session.driver_name}
         </Text>
       </View>
       <View style={styles.sessionRight}>
@@ -128,7 +117,8 @@ function SessionRow({
 
 export default function AttendantDashboard() {
   const [refreshing, setRefreshing] = useState(false);
-  const [sessions, setSessions] = useState(MOCK_ACTIVE_SESSIONS);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [loadError, setLoadError] = useState('');
 
   const headerAnim = useRef(new Animated.Value(0)).current;
 
@@ -138,16 +128,28 @@ export default function AttendantDashboard() {
       duration: 500,
       useNativeDriver: true,
     }).start();
+
+    loadSessions();
   }, []);
 
-  const onRefresh = () => {
+  const loadSessions = async () => {
+    try {
+      const data = await fetchActiveSessions();
+      setSessions(data);
+      setLoadError('');
+    } catch (e: any) {
+      setLoadError('Could not load sessions.');
+    }
+  };
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    // TODO: re-fetch sessions from API
-    setTimeout(() => setRefreshing(false), 1200);
+    await loadSessions();
+    setRefreshing(false);
   };
 
   const totalRevenue = sessions.reduce(
-    (sum, s) => sum + getAmount(s.startTime, s.ratePerHour),
+    (sum, s) => sum + getAmount(s.checkin_time, s.hourly_rate),
     0
   );
 
@@ -176,6 +178,16 @@ export default function AttendantDashboard() {
               <Text style={styles.logoutIcon}>⇥</Text>
             </TouchableOpacity>
           </View>
+
+          {/*loadError ? (
+             <Text style={{ color: colors.red, padding: 16 }}>{loadError}</Text>
+           ) : sessions.length === 0 ? (
+             <View style={styles.emptyState}>...</View>
+           ) : (
+             sessions.slice(0, 3).map((s, i) => (
+               <SessionRow key={s.id} session={s} index={i} />
+             ))
+           )}*/}
 
           {/* ── Stat Cards ── */}
           <View style={styles.statsRow}>

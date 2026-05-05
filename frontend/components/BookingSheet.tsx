@@ -5,7 +5,6 @@ import {
   Dimensions,
   Easing,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,57 +14,57 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import { apiFetch } from '@/constants/api';
 
 export interface SlotInfo {
   id: string;
-  number: string;   // e.g. "C4"
-  zone: string;     // e.g. "C"
+  number: string;
+  zone: string;
   ratePerHour: number;
 }
 
 type Sheet = 'duration' | 'payment' | 'processing' | 'success' | 'error';
+
+interface Quote {
+  advance_fee: number;
+  total_cost: number;
+  hourly_rate: number;
+  hours: number;
+}
 
 interface Props {
   visible: boolean;
   slot: SlotInfo;
   userPhone?: string;
   onClose: () => void;
-  onConfirmed?: (bookingRef: string) => void;
+  onConfirmed?: (bookingRef: string, slotId?: string) => void;
+  onSlotRefresh?: () => void;
 }
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const DURATIONS = [1, 2, 3, 4, 6, 8];
 const { height: SCREEN_H } = Dimensions.get('window');
 
 const C = {
-  navy:       '#0D1B40',
-  navyLight:  '#1A2B5F',
-  teal:       '#00C896',
-  tealDark:   '#00A57A',
-  tealGlow:   'rgba(0,200,150,0.18)',
-  white:      '#FFFFFF',
-  offWhite:   '#F4F6FB',
-  glass:      'rgba(255,255,255,0.10)',
-  glassBorder:'rgba(255,255,255,0.22)',
-  red:        '#FF4D4D',
-  redGlow:    'rgba(255,77,77,0.18)',
-  textMain:   '#0D1B40',
-  textSub:    '#6B7A99',
-  cardBg:     'rgba(255,255,255,0.72)',
+  navy:        '#0D1B40',
+  navyLight:   '#1A2B5F',
+  teal:        '#00C896',
+  tealDark:    '#00A57A',
+  tealGlow:    'rgba(0,200,150,0.18)',
+  white:       '#FFFFFF',
+  offWhite:    '#F4F6FB',
+  glass:       'rgba(255,255,255,0.10)',
+  glassBorder: 'rgba(255,255,255,0.22)',
+  red:         '#FF4D4D',
+  redGlow:     'rgba(255,77,77,0.18)',
+  textMain:    '#0D1B40',
+  textSub:     '#6B7A99',
+  cardBg:      'rgba(255,255,255,0.72)',
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatKES(n: number) {
   return `KES ${n.toLocaleString()}`;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-/** Glassmorphic pill for zone/rate info */
 function GlassPill({ label }: { label: string }) {
   return (
     <View style={styles.glassPill}>
@@ -74,21 +73,14 @@ function GlassPill({ label }: { label: string }) {
   );
 }
 
-/** Single duration option chip */
-function DurationChip({
-  hours,
-  selected,
-  onPress,
-}: {
-  hours: number;
-  selected: boolean;
-  onPress: () => void;
+function DurationChip({ hours, selected, onPress }: {
+  hours: number; selected: boolean; onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePress = () => {
     Animated.sequence([
-      Animated.timing(scale, { toValue: 0.88, duration: 80, useNativeDriver: true, easing: Easing.out(Easing.quad) }),
+      Animated.timing(scale, { toValue: 0.88, duration: 80,  useNativeDriver: true, easing: Easing.out(Easing.quad) }),
       Animated.timing(scale, { toValue: 1,    duration: 160, useNativeDriver: true, easing: Easing.out(Easing.back(2)) }),
     ]).start();
     onPress();
@@ -101,29 +93,22 @@ function DurationChip({
         onPress={handlePress}
         style={[styles.durationChip, selected && styles.durationChipSelected]}
       >
-        <Text style={[styles.durationChipNum, selected && styles.durationChipNumSel]}>
-          {hours}
-        </Text>
-        <Text style={[styles.durationChipUnit, selected && styles.durationChipUnitSel]}>
-          hr
-        </Text>
+        <Text style={[styles.durationChipNum, selected && styles.durationChipNumSel]}>{hours}</Text>
+        <Text style={[styles.durationChipUnit, selected && styles.durationChipUnitSel]}>hr</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-/** Animated success checkmark */
 function SuccessCheck() {
-  const scale  = useRef(new Animated.Value(0)).current;
+  const scale   = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.parallel([
       Animated.spring(scale,   { toValue: 1, friction: 5, tension: 80, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 1, duration: 300, useNativeDriver: true }),
     ]).start();
   }, []);
-
   return (
     <Animated.View style={[styles.checkCircle, { transform: [{ scale }], opacity }]}>
       <Text style={styles.checkMark}>✓</Text>
@@ -131,20 +116,17 @@ function SuccessCheck() {
   );
 }
 
-/** Animated error X */
 function ErrorIcon() {
   const shake = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.sequence([
-      Animated.timing(shake, { toValue: 10,  duration: 60,  useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -10, duration: 60,  useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 8,   duration: 50,  useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -8,  duration: 50,  useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0,   duration: 50,  useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 10,  duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 8,   duration: 50, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: -8,  duration: 50, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 0,   duration: 50, useNativeDriver: true }),
     ]).start();
   }, []);
-
   return (
     <Animated.View style={[styles.errorCircle, { transform: [{ translateX: shake }] }]}>
       <Text style={styles.errorMark}>✕</Text>
@@ -152,67 +134,127 @@ function ErrorIcon() {
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 export default function BookingSheet({
-  visible,
-  slot,
-  userPhone = '',
-  onClose,
-  onConfirmed,
+  visible, slot, userPhone = '', onClose, onConfirmed,onSlotRefresh,
 }: Props) {
-  const [sheet,        setSheet]    = useState<Sheet>('duration');
-  const [hours,        setHours]    = useState(1);
-  const [phone,        setPhone]    = useState(userPhone);
-  const [bookingRef,   setBookingRef] = useState('');
-  const [errorMsg,     setErrorMsg] = useState('');
+  const [sheet,       setSheet]      = useState<Sheet>('duration');
+  const [hours,       setHours]      = useState(1);
+  const [phone,       setPhone]      = useState(userPhone);
+  const [bookingRef,  setBookingRef] = useState('');
+  const [errorMsg,    setErrorMsg]   = useState('');
 
-  // Sheet slide-up animation
+  // ── Quote state — always sourced from backend ──────────────────────────────
+  const [quote,        setQuote]        = useState<Quote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError,   setQuoteError]   = useState(false);
+
+
+
   const slideY = useRef(new Animated.Value(SCREEN_H)).current;
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Reset on open
   useEffect(() => {
     if (visible) {
       setSheet('duration');
       setHours(1);
-      Animated.spring(slideY, {
-        toValue: 0,
-        friction: 14,
-        tension: 60,
-        useNativeDriver: true,
-      }).start();
+      setQuote(null);
+      Animated.spring(slideY, { toValue: 0, friction: 14, tension: 60, useNativeDriver: true }).start();
     } else {
-      Animated.timing(slideY, {
-        toValue: SCREEN_H,
-        duration: 260,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(slideY, { toValue: SCREEN_H, duration: 260, easing: Easing.in(Easing.quad), useNativeDriver: true }).start();
     }
   }, [visible]);
 
-  const totalAmount  = hours * slot.ratePerHour;
-  // Advance = 25% of total, min 50 KES
-  const advanceFee   = Math.max(50, Math.round(totalAmount * 0.25));
+  // Fetch quote from backend whenever hours or slot changes
+  useEffect(() => {
+    if (!visible || !slot?.id) return;
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+    let cancelled = false;
+    setQuoteLoading(true);
+    setQuoteError(false);
 
-  const handleProceedToPayment = () => {
-    setSheet('payment');
+    apiFetch('/bookings/quote', {
+      method: 'POST',
+      body: JSON.stringify({ slot_id: slot.id, hours }),
+    })
+      .then((data: Quote) => {
+        if (!cancelled) setQuote(data);
+      })
+      .catch(() => {
+        if (!cancelled) setQuoteError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setQuoteLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [hours, slot?.id, visible]);
+
+  // ✅ Always use backend amounts — never calculate on frontend
+  const totalAmount = quote?.total_cost  ?? 0;
+  const advanceFee  = quote?.advance_fee ?? 0;
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
+
+  const pollBookingStatus = (ref: string) => {
+    let attempts = 0;
+    pollingRef.current = setInterval(async () => {
+      attempts++;
+
+      // Timeout after 2 minutes (40 × 3s)
+      if (attempts > 40) {
+        clearInterval(pollingRef.current!);
+        setErrorMsg('Payment timed out — please try again.');
+        setSheet('error');
+        onSlotRefresh?.();   // free the slot on parent
+        return;
+      }
+
+      try {
+        const data = await apiFetch(`/bookings/${ref}`);
+        console.log('POLL RESPONSE:', JSON.stringify(data, null, 2)); 
+        const status = data.booking?.booking_status ?? data.status;
+        console.log('RESOLVED STATUS:', status);
+
+        if (status === 'confirmed' || status === 'active') {
+          clearInterval(pollingRef.current!);
+          setSheet('success');
+          onConfirmed?.(ref);
+          onSlotRefresh?.();   // refresh to show slot as reserved
+        } else if (status === 'cancelled' || status === 'failed') {
+          clearInterval(pollingRef.current!);
+          setErrorMsg('Payment was cancelled or failed.');
+          setSheet('error');
+          onSlotRefresh?.();   // refresh to show slot back as available
+        }
+        // if still 'pending', keep polling
+      } catch {
+        // network hiccup — don't stop polling, just wait next tick
+      }
+    }, 3000);
   };
+  
+  const handleProceedToPayment = () => setSheet('payment');
 
   const handlePay = async () => {
     if (!phone.match(/^07\d{8}$/)) {
       setErrorMsg('Enter a valid Safaricom number (07XXXXXXXX)');
       return;
     }
+    if (!quote) {
+      setErrorMsg('Pricing not loaded yet — please wait');
+      return;
+    }
     setErrorMsg('');
     setSheet('processing');
 
     try {
-      // Replace with your actual API call
-      const res = await fetch('https://your-api.com/v1/bookings', {
+      const data = await apiFetch('/bookings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer YOUR_TOKEN' },
         body: JSON.stringify({
           slot_id:            slot.id,
           phone,
@@ -221,11 +263,10 @@ export default function BookingSheet({
         }),
       });
 
-      if (!res.ok) throw new Error('Booking failed');
-      const data = await res.json();
-      setBookingRef(data.booking?.booking_reference ?? 'BK-DEMO001');
-      setSheet('success');
-      onConfirmed?.(bookingRef);
+      const ref = data.booking?.booking_reference;
+      if (!ref) throw new Error('No booking reference returned');
+      setBookingRef(ref);
+      pollBookingStatus(ref);
     } catch (e: any) {
       setErrorMsg(e.message ?? 'Something went wrong');
       setSheet('error');
@@ -237,11 +278,10 @@ export default function BookingSheet({
     onClose();
   }, [onClose]);
 
-  // ── Render sheets ────────────────────────────────────────────────────────────
+  // ── Sheets ─────────────────────────────────────────────────────────────────
 
   const renderDuration = () => (
     <View>
-      {/* Header */}
       <View style={styles.sheetHeader}>
         <View style={styles.slotIconBadge}>
           <Text style={styles.slotIconText}>P</Text>
@@ -250,12 +290,11 @@ export default function BookingSheet({
           <Text style={styles.sheetTitle}>Book Slot {slot.number}</Text>
           <View style={styles.sheetSubRow}>
             <GlassPill label={`Zone ${slot.zone}`} />
-            <GlassPill label={`KES ${slot.ratePerHour}/hr`} />
+            <GlassPill label={`KES ${quote?.hourly_rate ?? slot.ratePerHour}/hr`} />
           </View>
         </View>
       </View>
 
-      {/* Duration picker */}
       <Text style={styles.sectionLabel}>Select Duration</Text>
       <View style={styles.durationRow}>
         {DURATIONS.map(h => (
@@ -263,11 +302,17 @@ export default function BookingSheet({
         ))}
       </View>
 
-      {/* Summary card */}
+      {/* Summary card — shows backend amounts or loading state */}
       <View style={styles.summaryCard}>
         <View>
           <Text style={styles.summaryLabel}>Total Amount</Text>
-          <Text style={styles.summaryTotal}>{formatKES(totalAmount)}</Text>
+          {quoteLoading ? (
+            <ActivityIndicator color={C.teal} style={{ marginTop: 4 }} />
+          ) : quoteError ? (
+            <Text style={[styles.summaryTotal, { color: C.red, fontSize: 14 }]}>Failed to load pricing</Text>
+          ) : (
+            <Text style={styles.summaryTotal}>{formatKES(totalAmount)}</Text>
+          )}
         </View>
         <View style={styles.summaryRight}>
           <View style={styles.mpesaTag}>
@@ -280,15 +325,22 @@ export default function BookingSheet({
         </View>
       </View>
 
-      {/* Advance note */}
       <View style={styles.advanceNote}>
         <Text style={styles.advanceNoteText}>
-          💡 Pay <Text style={styles.advanceNoteAmount}>{formatKES(advanceFee)}</Text> now to confirm. Balance due at checkout.
+          💡 Pay{' '}
+          <Text style={styles.advanceNoteAmount}>
+            {quoteLoading ? '...' : formatKES(advanceFee)}
+          </Text>{' '}
+          now to confirm. Balance due at checkout.
         </Text>
       </View>
 
-      {/* CTA */}
-      <TouchableOpacity style={styles.ctaButton} activeOpacity={0.88} onPress={handleProceedToPayment}>
+      <TouchableOpacity
+        style={[styles.ctaButton, (quoteLoading || quoteError) && { opacity: 0.5 }]}
+        activeOpacity={0.88}
+        onPress={handleProceedToPayment}
+        disabled={quoteLoading || quoteError}
+      >
         <Text style={styles.ctaButtonText}>📱  Continue to Payment</Text>
       </TouchableOpacity>
     </View>
@@ -305,7 +357,7 @@ export default function BookingSheet({
         An STK push will be sent to your phone. Enter your M-Pesa PIN to confirm.
       </Text>
 
-      {/* Amount row */}
+      {/* ✅ Shows backend-calculated amounts */}
       <View style={styles.paymentAmountCard}>
         <View>
           <Text style={styles.paymentAmountLabel}>Advance to pay now</Text>
@@ -317,7 +369,6 @@ export default function BookingSheet({
         </View>
       </View>
 
-      {/* Phone input */}
       <Text style={styles.sectionLabel}>M-Pesa Number</Text>
       <View style={[styles.phoneInputWrap, errorMsg ? styles.inputError : null]}>
         <Text style={styles.phoneFlag}>🇰🇪 +254</Text>
@@ -333,7 +384,6 @@ export default function BookingSheet({
       </View>
       {!!errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
 
-      {/* Slot summary */}
       <View style={styles.slotSummaryRow}>
         <Text style={styles.slotSummaryItem}>🅿️  Slot {slot.number}</Text>
         <Text style={styles.slotSummaryItem}>⏱  {hours} hr{hours > 1 ? 's' : ''}</Text>
@@ -362,13 +412,11 @@ export default function BookingSheet({
   const renderSuccess = () => {
     const checkinTime = new Date(Date.now() + 30 * 60000);
     const fmt = (d: Date) => d.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' });
-
     return (
       <View style={styles.centeredState}>
         <SuccessCheck />
         <Text style={styles.stateTitle}>Booking Confirmed!</Text>
         <Text style={styles.stateSubtitle}>Your slot is reserved. Head over within 30 minutes.</Text>
-
         <View style={styles.successCard}>
           <View style={styles.successRow}>
             <Text style={styles.successRowLabel}>Slot</Text>
@@ -386,11 +434,15 @@ export default function BookingSheet({
           </View>
           <View style={styles.successDivider} />
           <View style={styles.successRow}>
+            <Text style={styles.successRowLabel}>Advance Paid</Text>
+            <Text style={[styles.successRowValue, { color: C.teal }]}>{formatKES(advanceFee)}</Text>
+          </View>
+          <View style={styles.successDivider} />
+          <View style={styles.successRow}>
             <Text style={styles.successRowLabel}>Ref</Text>
             <Text style={styles.successRowValue}>{bookingRef}</Text>
           </View>
         </View>
-
         <TouchableOpacity style={styles.ctaButton} activeOpacity={0.88} onPress={handleClose}>
           <Text style={styles.ctaButtonText}>Done</Text>
         </TouchableOpacity>
@@ -403,7 +455,6 @@ export default function BookingSheet({
       <ErrorIcon />
       <Text style={styles.stateTitle}>Payment Failed</Text>
       <Text style={styles.stateSubtitle}>{errorMsg || 'The M-Pesa request was cancelled or timed out.'}</Text>
-
       <TouchableOpacity
         style={[styles.ctaButton, { backgroundColor: C.teal, marginTop: 32 }]}
         activeOpacity={0.88}
@@ -418,29 +469,19 @@ export default function BookingSheet({
   );
 
   const sheetContent: Record<Sheet, () => React.ReactNode> = {
-    duration:   renderDuration,
-    payment:    renderPayment,
-    processing: renderProcessing,
-    success:    renderSuccess,
-    error:      renderError,
+    duration: renderDuration, payment: renderPayment,
+    processing: renderProcessing, success: renderSuccess, error: renderError,
   };
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   if (!visible) return null;
 
   return (
     <Modal transparent animationType="none" visible={visible} onRequestClose={handleClose}>
-      {/* Backdrop blur */}
       <Pressable style={styles.backdrop} onPress={sheet === 'processing' ? undefined : handleClose}>
         <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
       </Pressable>
-
-      {/* Sheet */}
       <Animated.View style={[styles.sheet, { transform: [{ translateY: slideY }] }]}>
-        {/* Drag handle */}
         <View style={styles.dragHandle} />
-
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -453,26 +494,20 @@ export default function BookingSheet({
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  // Layout
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(10,15,35,0.55)',
   },
   sheet: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 0, left: 0, right: 0,
     backgroundColor: C.offWhite,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 12,
     maxHeight: SCREEN_H * 0.88,
-    // Glass shimmer border at top
     borderTopWidth: 1.5,
     borderLeftWidth: 1.5,
     borderRightWidth: 1.5,
@@ -484,398 +519,171 @@ const styles = StyleSheet.create({
     elevation: 24,
   },
   dragHandle: {
-    width: 44,
-    height: 5,
-    borderRadius: 3,
+    width: 44, height: 5, borderRadius: 3,
     backgroundColor: 'rgba(0,0,0,0.12)',
     alignSelf: 'center',
     marginBottom: 20,
   },
-
-  // Header
   sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    marginBottom: 24,
+    flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24,
   },
   slotIconBadge: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 52, height: 52, borderRadius: 16,
     backgroundColor: C.teal,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
     shadowColor: C.teal,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.38,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.38, shadowRadius: 10, elevation: 6,
   },
-  slotIconText: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 22,
-    color: C.white,
-  },
-  sheetTitle: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 20,
-    color: C.textMain,
-    marginBottom: 4,
-  },
-  sheetSubRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-
-  // Glass pill
+  slotIconText: { fontFamily: 'Lexend_700Bold', fontSize: 22, color: C.white },
+  sheetTitle: { fontFamily: 'Lexend_700Bold', fontSize: 20, color: C.textMain, marginBottom: 4 },
+  sheetSubRow: { flexDirection: 'row', gap: 8 },
   glassPill: {
     backgroundColor: C.glass,
-    borderWidth: 1,
-    borderColor: C.glassBorder,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    //backgroundColor: 'rgba(13,27,64,0.08)',
+    borderWidth: 1, borderColor: C.glassBorder,
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3,
   },
-  glassPillText: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 11,
-    color: C.navyLight,
-  },
-
-  // Duration
+  glassPillText: { fontFamily: 'Lexend_600SemiBold', fontSize: 11, color: C.navyLight },
   sectionLabel: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 13,
-    color: C.textSub,
-    marginBottom: 12,
-    letterSpacing: 0.4,
+    fontFamily: 'Lexend_600SemiBold', fontSize: 13,
+    color: C.textSub, marginBottom: 12, letterSpacing: 0.4,
   },
-  durationRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 24,
-    flexWrap: 'wrap',
-  },
+  durationRow: { flexDirection: 'row', gap: 10, marginBottom: 24, flexWrap: 'wrap' },
   durationChip: {
-    width: 52,
-    height: 58,
-    borderRadius: 16,
+    width: 52, height: 58, borderRadius: 16,
     backgroundColor: C.cardBg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.06)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.06)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
   durationChipSelected: {
-    backgroundColor: C.navy,
-    borderColor: C.navy,
-    shadowColor: C.navy,
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    elevation: 6,
+    backgroundColor: C.navy, borderColor: C.navy,
+    shadowColor: C.navy, shadowOpacity: 0.28, shadowRadius: 10, elevation: 6,
   },
-  durationChipNum: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 18,
-    color: C.textMain,
-  },
+  durationChipNum: { fontFamily: 'Lexend_700Bold', fontSize: 18, color: C.textMain },
   durationChipNumSel: { color: C.white },
-  durationChipUnit: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 11,
-    color: C.textSub,
-  },
+  durationChipUnit: { fontFamily: 'Lexend_400Regular', fontSize: 11, color: C.textSub },
   durationChipUnitSel: { color: 'rgba(255,255,255,0.65)' },
-
-  // Summary card
   summaryCard: {
-    backgroundColor: C.cardBg,
-    borderRadius: 20,
-    padding: 18,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    backgroundColor: C.cardBg, borderRadius: 20, padding: 18,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
   },
-  summaryLabel: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 12,
-    color: C.textSub,
-    marginBottom: 4,
-  },
-  summaryTotal: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 26,
-    color: C.textMain,
-  },
+  summaryLabel: { fontFamily: 'Lexend_400Regular', fontSize: 12, color: C.textSub, marginBottom: 4 },
+  summaryTotal: { fontFamily: 'Lexend_700Bold', fontSize: 26, color: C.textMain },
   summaryRight: { alignItems: 'flex-end' },
   mpesaTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: C.tealGlow,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: C.tealGlow, borderRadius: 14,
+    paddingHorizontal: 12, paddingVertical: 8,
   },
   mpesaIcon: { fontSize: 18 },
-  mpesaLabel: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 13,
-    color: C.tealDark,
-  },
-  mpesaPhone: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 11,
-    color: C.textSub,
-  },
-
-  // Advance note
+  mpesaLabel: { fontFamily: 'Lexend_700Bold', fontSize: 13, color: C.tealDark },
+  mpesaPhone: { fontFamily: 'Lexend_400Regular', fontSize: 11, color: C.textSub },
   advanceNote: {
-    backgroundColor: 'rgba(0,200,150,0.08)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(0,200,150,0.18)',
+    backgroundColor: 'rgba(0,200,150,0.08)', borderRadius: 12,
+    padding: 12, marginBottom: 20,
+    borderWidth: 1, borderColor: 'rgba(0,200,150,0.18)',
   },
-  advanceNoteText: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 13,
-    color: C.textMain,
-    lineHeight: 19,
-  },
-  advanceNoteAmount: {
-    fontFamily: 'Lexend_700Bold',
-    color: C.tealDark,
-  },
-
-  // CTA
+  advanceNoteText: { fontFamily: 'Lexend_400Regular', fontSize: 13, color: C.textMain, lineHeight: 19 },
+  advanceNoteAmount: { fontFamily: 'Lexend_700Bold', color: C.tealDark },
   ctaButton: {
-    backgroundColor: C.teal,
-    borderRadius: 18,
-    paddingVertical: 17,
+    backgroundColor: C.teal, borderRadius: 18, paddingVertical: 17,
     alignItems: 'center',
     shadowColor: C.teal,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowOpacity: 0.35, shadowRadius: 14, elevation: 8,
   },
-  ctaButtonText: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 16,
-    color: C.white,
-    letterSpacing: 0.3,
-  },
-
-  // Payment sheet
+  ctaButtonText: { fontFamily: 'Lexend_700Bold', fontSize: 16, color: C.white, letterSpacing: 0.3 },
   backBtn: { marginBottom: 16, alignSelf: 'flex-start' },
-  backBtnText: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 14,
-    color: C.textSub,
-  },
+  backBtnText: { fontFamily: 'Lexend_600SemiBold', fontSize: 14, color: C.textSub },
   paymentSubtitle: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 14,
-    color: C.textSub,
-    marginBottom: 20,
-    lineHeight: 20,
+    fontFamily: 'Lexend_400Regular', fontSize: 14,
+    color: C.textSub, marginBottom: 20, lineHeight: 20,
   },
   paymentAmountCard: {
-    backgroundColor: C.navy,
-    borderRadius: 20,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
+    backgroundColor: C.navy, borderRadius: 20, padding: 20,
+    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24,
   },
   paymentAmountLabel: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.55)',
-    marginBottom: 4,
+    fontFamily: 'Lexend_400Regular', fontSize: 11,
+    color: 'rgba(255,255,255,0.55)', marginBottom: 4,
   },
-  paymentAmount: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 26,
-    color: C.teal,
-  },
+  paymentAmount: { fontFamily: 'Lexend_700Bold', fontSize: 26, color: C.teal },
   paymentAmountSub: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.75)',
-    textAlign: 'right',
+    fontFamily: 'Lexend_600SemiBold', fontSize: 16,
+    color: 'rgba(255,255,255,0.75)', textAlign: 'right',
   },
   phoneInputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: C.cardBg,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.08)',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    height: 54,
-    gap: 10,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: C.cardBg, borderRadius: 16,
+    borderWidth: 1.5, borderColor: 'rgba(0,0,0,0.08)',
+    paddingHorizontal: 16, marginBottom: 8, height: 54, gap: 10,
   },
   inputError: { borderColor: C.red },
   phoneFlag: { fontSize: 16, fontFamily: 'Lexend_400Regular', color: C.textMain },
-  phoneInput: {
-    flex: 1,
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 16,
-    color: C.textMain,
-  },
-  errorText: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 12,
-    color: C.red,
-    marginBottom: 12,
-  },
-  slotSummaryRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-    marginBottom: 20,
-    marginTop: 8,
-  },
+  phoneInput: { flex: 1, fontFamily: 'Lexend_400Regular', fontSize: 16, color: C.textMain },
+  errorText: { fontFamily: 'Lexend_400Regular', fontSize: 12, color: C.red, marginBottom: 12 },
+  slotSummaryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 20, marginTop: 8 },
   slotSummaryItem: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 13,
-    color: C.textSub,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    fontFamily: 'Lexend_400Regular', fontSize: 13, color: C.textSub,
+    backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 5,
   },
-
-  // Processing / centered states
   centeredState: { alignItems: 'center', paddingVertical: 16 },
   processingRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 80, height: 80, borderRadius: 40,
     backgroundColor: C.tealGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 24,
   },
   stateTitle: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 22,
-    color: C.textMain,
-    marginBottom: 10,
-    textAlign: 'center',
+    fontFamily: 'Lexend_700Bold', fontSize: 22,
+    color: C.textMain, marginBottom: 10, textAlign: 'center',
   },
   stateSubtitle: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 14,
-    color: C.textSub,
-    textAlign: 'center',
-    lineHeight: 21,
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    fontFamily: 'Lexend_400Regular', fontSize: 14,
+    color: C.textSub, textAlign: 'center', lineHeight: 21,
+    paddingHorizontal: 16, marginBottom: 8,
   },
   processingPhone: {
-    marginTop: 20,
-    backgroundColor: C.tealGlow,
-    borderRadius: 14,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    marginTop: 20, backgroundColor: C.tealGlow,
+    borderRadius: 14, paddingHorizontal: 20, paddingVertical: 10,
   },
-  processingPhoneText: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 15,
-    color: C.tealDark,
-  },
-
-  // Success
+  processingPhoneText: { fontFamily: 'Lexend_600SemiBold', fontSize: 15, color: C.tealDark },
   checkCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 80, height: 80, borderRadius: 40,
     backgroundColor: C.teal,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
     shadowColor: C.teal,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOpacity: 0.4, shadowRadius: 16, elevation: 10,
   },
   checkMark: { fontSize: 38, color: C.white },
   successCard: {
-    width: '100%',
-    backgroundColor: C.cardBg,
-    borderRadius: 20,
-    padding: 18,
-    marginVertical: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
+    width: '100%', backgroundColor: C.cardBg,
+    borderRadius: 20, padding: 18, marginVertical: 20,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.9)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
   },
-  successRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
-  successRowLabel: {
-    fontFamily: 'Lexend_400Regular',
-    fontSize: 14,
-    color: C.textSub,
-  },
-  successRowValue: {
-    fontFamily: 'Lexend_700Bold',
-    fontSize: 14,
-    color: C.textMain,
-  },
-  successDivider: {
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.06)',
-  },
-
-  // Error
+  successRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  successRowLabel: { fontFamily: 'Lexend_400Regular', fontSize: 14, color: C.textSub },
+  successRowValue: { fontFamily: 'Lexend_700Bold', fontSize: 14, color: C.textMain },
+  successDivider: { height: 1, backgroundColor: 'rgba(0,0,0,0.06)' },
   errorCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 80, height: 80, borderRadius: 40,
     backgroundColor: C.redGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: C.red,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+    borderWidth: 2, borderColor: C.red,
   },
   errorMark: { fontSize: 34, color: C.red },
-  ghostBtn: {
-    marginTop: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  ghostBtnText: {
-    fontFamily: 'Lexend_600SemiBold',
-    fontSize: 14,
-    color: C.textSub,
-  },
+  ghostBtn: { marginTop: 14, paddingVertical: 14, alignItems: 'center' },
+  ghostBtnText: { fontFamily: 'Lexend_600SemiBold', fontSize: 14, color: C.textSub },
 });

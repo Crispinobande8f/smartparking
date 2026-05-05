@@ -57,7 +57,7 @@ export default function SlotCard({ slot, onPress }: Props) {
       activeOpacity={isSelectable ? 0.7 : 1}
     >
       <Ionicons name={cfg.icon} size={28} color={cfg.color} />
-      <Text style={styles.slotId}>{slot.id}</Text>
+      <Text style={styles.slotId}>{slot.slot_number}</Text>
       <View style={[styles.badge, { backgroundColor: cfg.labelBg }]}>
         <Text style={[styles.badgeText, { color: cfg.labelText }]}>{cfg.label}</Text>
       </View>

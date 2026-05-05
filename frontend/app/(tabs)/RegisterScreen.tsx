@@ -278,7 +278,7 @@ export default function RegisterScreen() {
     const timeout = setTimeout(() => controller.abort(), 10_000);
 
     try {
-      const res = await fetch('http://192.168.100.10:8000/api/v1/auth/register', {
+      const res = await fetch('http://192.168.0.102:8000/api/v1/auth/register', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
@@ -290,6 +290,7 @@ export default function RegisterScreen() {
           ...(form.plate.trim() ? { plate_number: form.plate.trim() } : {}),
           password:              form.password,
           password_confirmation: form.confirmPassword,
+          role:'driver',
         }),
       });
 

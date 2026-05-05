@@ -13,7 +13,7 @@ class ParkingSlot extends Model
         'slot_number',
         'slot_type',
         'status',
-        'hourly_rate',
+        //'hourly_rate',
         'location_description',
         'is_active',
     ];
@@ -21,7 +21,7 @@ class ParkingSlot extends Model
     protected function casts():array
     {
         return[
-            'hourly_rate' => 'decimal:2',
+            //'hourly_rate' => 'decimal:2',
             'is_active'   => 'boolean',
         ];
     }
@@ -39,14 +39,14 @@ class ParkingSlot extends Model
                     ->whereNull('checkout_time');
     }
 
-    public function getHourlyRate()
-    {
-        return (float) $this ->hourly_rate;
-    }
-
     public function auditLogs()
     {
         return $this->hasMany(AuditLog::class);
+    }
+    public function pricingRule()
+    {
+        return $this->hasOne(PricingRule::class, 'slot_type', 'slot_type')
+            ->where('is_active', true);
     }
 
     // AuditLog model

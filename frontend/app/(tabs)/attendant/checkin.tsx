@@ -1,202 +1,183 @@
 /**
  * CheckInScreen.tsx
- * Screen: Attendant vehicle check-in — plate input, driver name, slot selection
+ * Screen: Attendant vehicle check-in — booking reference lookup → confirm
  * Route: app/(attendant)/checkin.tsx
  */
 import React, { useRef, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  Animated,
-  StatusBar,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  SafeAreaView, Animated, StatusBar, TextInput,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { AVAILABLE_SLOTS } from '@/constants/mockData';
 import { colors, shadows, scale } from '@/constants/theme';
+import { apiFetch } from '@/constants/api';
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-/** Labelled input field */
-function FormField({
-  label,
-  icon,
-  value,
-  onChangeText,
-  placeholder,
-  autoCapitalize,
-  error,
-}: {
-  label: string;
-  icon: string;
-  value: string;
-  onChangeText: (t: string) => void;
-  placeholder: string;
-  autoCapitalize?: 'none' | 'words' | 'sentences' | 'characters';
-  error?: string;
-}) {
-  const borderAnim = useRef(new Animated.Value(0)).current;
+interface BookingPreview {
+  booking_reference: string;
+  driver_name: string;
+  slot_number: string;
+  slot_type: string;
+  expected_arrival: string;
+  expected_departure: string;
+  advance_fee_paid: number;
+  booking_status: string;
+}
 
-  const onFocus = () =>
-    Animated.timing(borderAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
-  const onBlur = () =>
-    Animated.timing(borderAnim, { toValue: 0, duration: 200, useNativeDriver: false }).start();
+// ─── Info Row (shown in the preview card) ────────────────────────────────────
 
-  const borderColor = borderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['transparent', colors.green],
-  });
-
+function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
-    <View style={fieldStyles.wrapper}>
-      <Text style={fieldStyles.label}>{label}</Text>
-      <Animated.View
-        style={[
-          fieldStyles.inputWrap,
-          error ? fieldStyles.inputError : null,
-          { borderBottomColor: borderColor, borderBottomWidth: 2 },
-        ]}
-      >
-        <Text style={fieldStyles.icon}>{icon}</Text>
-        <TextInput
-          style={fieldStyles.input}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textMuted}
-          onFocus={onFocus}
-          onBlur={onBlur}
-          autoCapitalize={autoCapitalize ?? 'characters'}
-          autoCorrect={false}
-        />
-      </Animated.View>
-      {error ? <Text style={fieldStyles.error}>{error}</Text> : null}
+    <View style={infoStyles.row}>
+      <View style={infoStyles.iconBox}>
+        <Text style={{ fontSize: 18 }}>{icon}</Text>
+      </View>
+      <View style={infoStyles.content}>
+        <Text style={infoStyles.label}>{label}</Text>
+        <Text style={infoStyles.value}>{value}</Text>
+      </View>
     </View>
   );
 }
 
-const fieldStyles = StyleSheet.create({
-  wrapper: { marginBottom: 16 },
-  label: {
-    fontSize: scale(13),
-    fontWeight: '500',
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  inputWrap: {
+const infoStyles = StyleSheet.create({
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  iconBox: {
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    height: 56,
+    alignItems: 'center', justifyContent: 'center', marginRight: 14,
   },
-  inputError: { borderWidth: 1.5, borderColor: colors.red },
-  icon: { fontSize: 18, marginRight: 12 },
-  input: {
+  content: {
     flex: 1,
-    fontSize: scale(15),
-    color: colors.textPrimary,
-    fontWeight: '500',
   },
-  error: {
-    fontSize: scale(12),
-    color: colors.red,
-    marginTop: 4,
-    marginLeft: 4,
-  },
+  label: { fontSize: scale(11), color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4 },
+  value: { fontSize: scale(15), fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
 });
-
-// ─── Slot Pill ───────────────────────────────────────────────────────────────
-
-function SlotPill({
-  slot,
-  selected,
-  onPress,
-}: {
-  slot: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const pressIn = () =>
-    Animated.spring(scaleAnim, { toValue: 0.93, useNativeDriver: true, speed: 50 }).start();
-  const pressOut = () =>
-    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 50 }).start();
-
-  return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <TouchableOpacity
-        style={[styles.slotPill, selected && styles.slotPillSelected]}
-        onPress={onPress}
-        onPressIn={pressIn}
-        onPressOut={pressOut}
-        activeOpacity={1}
-      >
-        <Text style={[styles.slotPillText, selected && styles.slotPillTextSelected]}>
-          {slot}
-        </Text>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function CheckInScreen() {
-  const [plate, setPlate] = useState('');
-  const [driverName, setDriverName] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [bookingRef, setBookingRef]       = useState('');
+  const [preview, setPreview]             = useState<BookingPreview | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [error, setError]                 = useState('');
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const cardAnim  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
     ]).start();
   }, []);
 
-  const validate = () => {
-    const e: Record<string, string> = {};
-    if (!plate.trim()) e.plate = 'Plate number is required';
-    if (!driverName.trim()) e.driverName = 'Driver name is required';
-    if (!selectedSlot) e.slot = 'Please select a slot';
-    setErrors(e);
-    return Object.keys(e).length === 0;
+  // Animate preview card in when booking is found
+  useEffect(() => {
+    if (preview) {
+      cardAnim.setValue(0);
+      Animated.spring(cardAnim, {
+        toValue: 1, useNativeDriver: true, damping: 20, stiffness: 120,
+      }).start();
+    }
+  }, [preview]);
+
+  // ── Step 1: Look up the booking by reference ──────────────────────────────
+  const handleLookup = async () => {
+    const ref = bookingRef.trim().toUpperCase();
+    if (!ref) {
+      setError('Please enter a booking reference');
+      return;
+    }
+
+    setError('');
+    setPreview(null);
+    setLookupLoading(true);
+
+    try {
+      // GET /v1/bookings?reference=BK-XXXXXXXX
+      // Backend should return 404 if not found, 200 with booking data if found
+      const data = await apiFetch(`/bookings/${encodeURIComponent(ref)}`);
+      const booking = data.booking
+      const currentStatus = booking.booking_status;
+
+      if (currentStatus === 'checked_in') {
+        setError('This booking has already been checked in.');
+        return;
+      }
+      if (currentStatus === 'completed') {
+        setError('This booking is already completed.');
+        return;
+      }
+      if (currentStatus !== 'confirmed') {
+        setError(`Cannot check in — booking status is "${currentStatus}".`);
+        return;
+      }
+
+      setPreview(booking);
+    } catch (err: any) {
+      if (err?.status === 404) {
+        setError(`No booking found for reference "${ref}".`);
+      } else if (err?.status === 422) {
+        setError(err?.message ?? 'Booking is outside the check-in window.');
+      } else {
+        setError('Network error. Please try again.');
+      }
+    } finally {
+      setLookupLoading(false);
+    }
   };
 
-  const handleConfirm = () => {
-    if (!validate()) return;
-    setLoading(true);
-    // TODO: POST /api/v1/sessions with { plate, driverName, slotId }
-    setTimeout(() => {
-      setLoading(false);
+  // ── Step 2: Confirm the check-in ─────────────────────────────────────────
+  const handleConfirmCheckIn = async () => {
+    if (!preview) return;
+    setConfirmLoading(true);
+
+    try {
+      await apiFetch('/attendant/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ booking_reference: preview.booking_reference }),
+      });
+
       Alert.alert(
-        'Check-In Successful ✅',
-        `${plate} assigned to Slot ${selectedSlot}`,
+        'Check-In Successful',
+        `${preview.driver_name} — Slot ${preview.slot_number} is now active.`,
         [{ text: 'Done', onPress: () => router.back() }]
       );
-    }, 1600);
+    } catch (err: any) {
+      if (err?.status === 422) {
+        Alert.alert('Cannot Check In', err?.message ?? 'Outside check-in window.');
+      } else if (err?.status === 409) {
+        Alert.alert('Already Active', 'An active session already exists for this booking.');
+      } else {
+        Alert.alert('Error', 'Check-in failed. Please try again.');
+      }
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setPreview(null);
+    setBookingRef('');
+    setError('');
   };
 
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor={colors.navy} />
 
-      {/* Navy Header */}
+      {/* Header */}
       <SafeAreaView style={styles.headerSafe}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -216,81 +197,134 @@ export default function CheckInScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Animated.View
-            style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
-          >
-            {/* Vehicle Details Card */}
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+
+            {/* ── Step 1: Reference Input Card ── */}
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <View style={styles.cardIconWrap}>
-                  <Text style={styles.cardIcon}>🚗</Text>
+                  <Text style={styles.cardIcon}>🔖</Text>
                 </View>
-                <Text style={styles.cardTitle}>Vehicle Details</Text>
+                <View>
+                  <Text style={styles.cardTitle}>Booking Reference</Text>
+                  <Text style={styles.cardSubtitle}>Enter the drivers booking code</Text>
+                </View>
               </View>
 
-              <FormField
-                label="Vehicle Plate Number"
-                icon="🚗"
-                value={plate}
-                onChangeText={setPlate}
-                placeholder="KBZ 412G"
-                autoCapitalize="characters"
-                error={errors.plate}
-              />
-              <FormField
-                label="Driver Name"
-                icon="👤"
-                value={driverName}
-                onChangeText={setDriverName}
-                placeholder="James Kamau"
-                autoCapitalize="words"
-                error={errors.driverName}
-              />
-            </View>
-
-            {/* Assign Slot Card */}
-            <View style={[styles.card, { marginTop: 12 }]}>
-              <View style={styles.cardHeader}>
-                <View style={[styles.cardIconWrap, { backgroundColor: '#EEF1F6' }]}>
-                  <Text style={styles.cardIcon}>🅿️</Text>
-                </View>
-                <Text style={styles.cardTitle}>Assign Slot</Text>
-              </View>
-
-              <Text style={styles.slotSectionLabel}>Available Slots</Text>
-
-              {errors.slot ? (
-                <Text style={styles.slotError}>{errors.slot}</Text>
-              ) : null}
-
-              <View style={styles.slotsGrid}>
-                {AVAILABLE_SLOTS.map((slot) => (
-                  <SlotPill
-                    key={slot}
-                    slot={slot}
-                    selected={selectedSlot === slot}
-                    onPress={() => setSelectedSlot(slot)}
+              <View style={styles.searchRow}>
+                <View style={[styles.inputWrap, error ? styles.inputError : null]}>
+                  <Text style={styles.inputIcon}>#</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={bookingRef}
+                    onChangeText={t => { setBookingRef(t); setError(''); }}
+                    placeholder="BK-XXXXXXXX"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    onSubmitEditing={handleLookup}
+                    editable={!preview} // lock field once booking found
                   />
-                ))}
+                  {preview && (
+                    <TouchableOpacity onPress={handleReset} style={styles.clearBtn}>
+                      <Text style={styles.clearBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {!preview && (
+                  <TouchableOpacity
+                    style={[styles.lookupBtn, lookupLoading && { opacity: 0.7 }]}
+                    onPress={handleLookup}
+                    disabled={lookupLoading}
+                    activeOpacity={0.85}
+                  >
+                    {lookupLoading
+                      ? <ActivityIndicator color={colors.white} size="small" />
+                      : <Text style={styles.lookupBtnText}>Look Up</Text>
+                    }
+                  </TouchableOpacity>
+                )}
               </View>
+
+              {error ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorIcon}>⚠️</Text>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
             </View>
 
-            {/* Confirm Button */}
-            <TouchableOpacity
-              style={[styles.confirmBtn, loading && styles.confirmBtnDisabled]}
-              onPress={handleConfirm}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <>
-                  <Text style={styles.confirmIcon}>→|</Text>
-                  <Text style={styles.confirmLabel}>Confirm Check-In</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* ── Step 2: Booking Preview Card (shown after lookup) ── */}
+            {preview && (
+              <Animated.View
+                style={[
+                  styles.card,
+                  { marginTop: 12 },
+                  {
+                    opacity: cardAnim,
+                    transform: [{
+                      translateY: cardAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+                    }],
+                  },
+                ]}
+              >
+                {/* Found badge */}
+                <View style={styles.foundBadge}>
+                  <View style={styles.foundDot} />
+                  <Text style={styles.foundBadgeText}>Booking Found</Text>
+                </View>
+
+                <View style={styles.cardHeader}>
+                  <View style={[styles.cardIconWrap, { backgroundColor: colors.greenLight }]}>
+                    <Text style={styles.cardIcon}>🚗</Text>
+                  </View>
+                  <Text style={styles.cardTitle}>Driver & Slot Details</Text>
+                </View>
+
+                <InfoRow icon="👤" label="Driver" value={preview.driver_name} />
+                <InfoRow icon="🅿️" label="Slot" value={`${preview.slot_number} (${preview.slot_type})`} />
+                <InfoRow
+                  icon="🕐"
+                  label="Expected Arrival"
+                  value={new Date(preview.expected_arrival).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                />
+                <InfoRow
+                  icon="🕔"
+                  label="Expected Departure"
+                  value={new Date(preview.expected_departure).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                />
+                <InfoRow
+                  icon="💵"
+                  label="Deposit Paid"
+                  value={`KES ${preview.advance_fee_paid}`}
+                />
+              </Animated.View>
+            )}
+
+            {/* ── Confirm Button (only when preview is loaded) ── */}
+            {preview && (
+              <Animated.View style={{ opacity: cardAnim }}>
+                <TouchableOpacity
+                  style={[styles.confirmBtn, confirmLoading && styles.confirmBtnDisabled]}
+                  onPress={handleConfirmCheckIn}
+                  disabled={confirmLoading}
+                  activeOpacity={0.85}
+                >
+                  {confirmLoading
+                    ? <ActivityIndicator color={colors.white} />
+                    : (
+                      <>
+                        <Text style={styles.confirmIcon}>→|</Text>
+                        <Text style={styles.confirmLabel}>Confirm Check-In</Text>
+                      </>
+                    )
+                  }
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -307,114 +341,102 @@ const styles = StyleSheet.create({
   // Header
   headerSafe: { backgroundColor: colors.navy },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
     backgroundColor: colors.navy,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   backIcon: { fontSize: 26, color: colors.white, fontWeight: '300', lineHeight: 30 },
-  headerTitle: {
-    fontSize: scale(17),
-    fontWeight: '700',
-    color: colors.white,
-  },
+  headerTitle: { fontSize: scale(17), fontWeight: '700', color: colors.white },
 
   // Scroll
-  scroll: { padding: 16, paddingBottom: 40 },
+  scroll: { padding: 16, paddingBottom: 48 },
 
   // Card
   card: {
     backgroundColor: colors.white,
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 20, padding: 20,
     ...shadows.card,
   },
   cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12, marginBottom: 20,
   },
   cardIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 40, height: 40, borderRadius: 12,
     backgroundColor: colors.greenLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
   cardIcon: { fontSize: 18 },
-  cardTitle: {
-    fontSize: scale(16),
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
+  cardTitle: { fontSize: scale(16), fontWeight: '700', color: colors.textPrimary },
+  cardSubtitle: { fontSize: scale(12), color: colors.textSecondary, marginTop: 2 },
 
-  // Slots
-  slotSectionLabel: {
-    fontSize: scale(13),
-    fontWeight: '500',
-    color: colors.textSecondary,
-    marginBottom: 12,
+  // Search row
+  searchRow: { flexDirection: 'row', gap: 10 },
+  inputWrap: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.surface, borderRadius: 14,
+    paddingHorizontal: 14, height: 52,
+    borderWidth: 1.5, borderColor: colors.border,
   },
-  slotError: {
-    fontSize: scale(12),
-    color: colors.red,
-    marginBottom: 8,
+  inputError: { borderColor: colors.red },
+  inputIcon: {
+    fontSize: scale(18), fontWeight: '700',
+    color: colors.textSecondary, marginRight: 10,
   },
-  slotsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  input: {
+    flex: 1, fontSize: scale(15),
+    color: colors.textPrimary, fontWeight: '600',
+    letterSpacing: 1,
   },
-  slotPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    minWidth: 52,
-    alignItems: 'center',
+  clearBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  slotPillSelected: {
-    backgroundColor: colors.navy,
-    borderColor: colors.navy,
+  clearBtnText: { fontSize: 12, color: colors.textSecondary, fontWeight: '700' },
+  lookupBtn: {
+    paddingHorizontal: 18, height: 52,
+    borderRadius: 14, backgroundColor: colors.navy,
+    alignItems: 'center', justifyContent: 'center',
+    ...shadows.card,
   },
-  slotPillText: {
-    fontSize: scale(13),
-    fontWeight: '600',
-    color: colors.textPrimary,
+  lookupBtnText: { fontSize: scale(14), fontWeight: '700', color: colors.white },
+
+  // Error box
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#FEF2F2', borderRadius: 12,
+    padding: 12, marginTop: 14,
+    borderWidth: 1, borderColor: '#FECACA',
   },
-  slotPillTextSelected: { color: colors.white },
+  errorIcon: { fontSize: 16 },
+  errorText: { flex: 1, fontSize: scale(13), color: colors.red, fontWeight: '500' },
+
+  // Found badge
+  foundBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.greenLight,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
+    alignSelf: 'flex-start', marginBottom: 16,
+  },
+  foundDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.green },
+  foundBadgeText: { fontSize: scale(12), fontWeight: '700', color: colors.green },
 
   // Confirm button
   confirmBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: colors.green,
-    borderRadius: 16,
-    height: 58,
-    marginTop: 20,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 10,
+    backgroundColor: colors.green, borderRadius: 16,
+    height: 58, marginTop: 16,
     ...shadows.strong,
   },
   confirmBtnDisabled: { opacity: 0.65 },
   confirmIcon: { fontSize: 20, color: colors.white, fontWeight: '700' },
-  confirmLabel: {
-    fontSize: scale(16),
-    fontWeight: '700',
-    color: colors.white,
-  },
+  confirmLabel: { fontSize: scale(16), fontWeight: '700', color: colors.white },
 });

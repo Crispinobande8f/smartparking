@@ -5,6 +5,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  KeyboardAvoidingView,  
+  Platform, 
   Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,79 +19,89 @@ const RATE = 100; // KES per hour
 interface Props {
   slot: ParkingSlot | null;
   visible: boolean;
+  userPhone:string;
   onClose: () => void;
   onConfirm: (slot: ParkingSlot, hours: number) => void;
 }
 
-export default function BookingModal({ slot, visible, onClose, onConfirm }: Props) {
+export default function BookingModal({ slot, visible, userPhone, onClose, onConfirm }: Props) {
   const [selectedHours, setSelectedHours] = useState(1);
+
 
   if (!slot) return null;
 
   const total = selectedHours * RATE;
 
+
+   
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        {/* Handle */}
-        <View style={styles.handle} />
+      <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+        <Pressable style={styles.backdrop} onPress={onClose} />
+        <View style={styles.sheet}>
+          {/* Handle */}
+          <View style={styles.handle} />
 
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.iconCircle}>
-            <Text style={styles.iconLetter}>P</Text>
-          </View>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Book Slot {slot.id}</Text>
-            <Text style={styles.subtitle}>Zone {slot.zone} · KES {RATE}/hr</Text>
-          </View>
-        </View>
-
-        {/* Duration Selector */}
-        <Text style={styles.sectionLabel}>Select Duration</Text>
-        <View style={styles.durationRow}>
-          {DURATIONS.map((h) => (
-            <TouchableOpacity
-              key={h}
-              style={[styles.durationBtn, selectedHours === h && styles.durationBtnActive]}
-              onPress={() => setSelectedHours(h)}
-            >
-              <Text style={[styles.durationNum, selectedHours === h && styles.durationNumActive]}>
-                {h}
-              </Text>
-              <Text style={[styles.durationUnit, selectedHours === h && styles.durationUnitActive]}>
-                hr
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Amount */}
-        <View style={styles.amountBox}>
-          <View>
-            <Text style={styles.amountLabel}>Total Amount</Text>
-            <Text style={styles.amountValue}>KES {total.toLocaleString()}</Text>
-          </View>
-          <View style={styles.mpesaBox}>
-            <Ionicons name="phone-portrait-outline" size={20} color={Colors.accent} />
-            <View style={{ marginLeft: 8 }}>
-              <Text style={styles.mpesaLabel}>M-Pesa</Text>
-              <Text style={styles.mpesaNumber}>0712345678</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.iconCircle}>
+              <Text style={styles.iconLetter}>P</Text>
+            </View>
+            <View style={styles.headerText}>
+              <Text style={styles.title}>Book Slot {slot.id}</Text>
+              <Text style={styles.subtitle}>Zone {slot.zone} · KES {RATE}/hr</Text>
             </View>
           </View>
-        </View>
 
-        {/* Pay Button */}
-        <TouchableOpacity
-          style={styles.payBtn}
-          onPress={() => onConfirm(slot, selectedHours)}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="phone-portrait-outline" size={18} color={Colors.white} style={{ marginRight: 8 }} />
-          <Text style={styles.payText}>Pay KES {total.toLocaleString()} via M-Pesa</Text>
-        </TouchableOpacity>
-      </View>
+          {/* Duration Selector */}
+          <Text style={styles.sectionLabel}>Select Duration</Text>
+          <View style={styles.durationRow}>
+            {DURATIONS.map((h) => (
+              <TouchableOpacity
+                key={h}
+                style={[styles.durationBtn, selectedHours === h && styles.durationBtnActive]}
+                onPress={() => setSelectedHours(h)}
+              >
+                <Text style={[styles.durationNum, selectedHours === h && styles.durationNumActive]}>
+                  {h}
+                </Text>
+                <Text style={[styles.durationUnit, selectedHours === h && styles.durationUnitActive]}>
+                  hr
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Amount */}
+          <View style={styles.amountBox}>
+            <View>
+              <Text style={styles.amountLabel}>Total Amount</Text>
+              <Text style={styles.amountValue}>KES {total.toLocaleString()}</Text>
+            </View>
+            <View style={styles.mpesaBox}>
+              <Ionicons name="phone-portrait-outline" size={20} color={Colors.accent} />
+              <View style={{ marginLeft: 8 }}>
+                <Text style={styles.mpesaLabel}>M-Pesa</Text>
+                <Text style={styles.mpesaNumber}>{userPhone}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Pay Button */}
+          <TouchableOpacity
+            style={styles.payBtn}
+            onPress={() => onConfirm(slot, selectedHours)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="phone-portrait-outline" size={18} color={Colors.white} style={{ marginRight: 8 }} />
+            <Text style={styles.payText}>Pay KES {total.toLocaleString()} via M-Pesa</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

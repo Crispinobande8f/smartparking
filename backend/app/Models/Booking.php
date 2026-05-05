@@ -19,6 +19,8 @@ class Booking extends Model
         'expected_departure',
         'advance_fee_paid',
         'booking_status',
+        'mpesa_checkout_id',    // ← add this
+        'mpesa_advance_ref',
 
     ];
 

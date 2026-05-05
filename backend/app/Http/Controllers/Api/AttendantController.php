@@ -100,4 +100,30 @@ class AttendantController extends Controller
             'advance_paid'       => (float) $booking->advance_fee_paid,
         ], 201);
     }
+
+    public function activeSessions(): JsonResponse
+    {
+        $sessions = CheckInSession::with(['booking', 'slot', 'user'])
+            ->whereNull('checkout_time')
+            ->where('session_status', 'active')
+            ->latest('checkin_time')
+            ->get()
+            ->map(fn($s) => [
+                'id'            => $s->id,
+                'session_id'    => $s->session_id,
+                'booking_reference' => $s->booking?->booking_reference,
+                'plate'         => $s->booking?->vehicle_plate,
+                'driver_name'   => $s->user?->name,
+                'slot'          => $s->slot?->slot_number,
+                'zone'          => strtoupper($s->slot?->slot_number[0] ?? ''),
+                'checkin_time'  => $s->checkin_time,
+                'hourly_rate'   => $s->slot
+                    ? (float) optional(\App\Models\PricingRule::where('slot_type', $s->slot->slot_type)->where('is_active', true)->first())->hourly_rate ?? 100
+                    : 100,
+                'advance_paid'  => (float) $s->advance_paid,
+                'checkout_requested' => $s->session_status === 'awaiting_payment',
+            ]);
+
+        return response()->json($sessions);
+    }
 }

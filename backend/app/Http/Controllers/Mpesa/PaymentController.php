@@ -46,7 +46,15 @@ class PaymentController extends Controller
                 'result_desc' => data_get($callback, 'ResultDesc'),
             ]);
 
-            $session->update(['session_status' => 'payment_failed']);
+            DB::transaction(function () use ($session) {
+                $session->update([
+                    'session_status' => 'payment_failed'
+                ]);
+
+                // Ensure slot stays occupied
+                ParkingSlot::where('id', $session->slot_id)
+                    ->update(['status' => 'occupied']);
+            });
             return response()->json(['ResultCode' => 0, 'ResultDesc' => 'Accepted']);
         }
 

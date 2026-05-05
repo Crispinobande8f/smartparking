@@ -1,19 +1,22 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   StyleSheet,
   SafeAreaView,
+  Alert,
   //FlatList,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow } from '../../../constants/theme';
 import { PARKING_SLOTS, ParkingSlot } from '../../../constants/data';
 import SlotCard from '../../../components/SlotCard';
 import BookingSheet,{SlotInfo} from '../../../components/BookingSheet';
+import { apiFetch } from '@/constants/api';
 
 const ZONES = ['All Zones', 'Zone A', 'Zone B', 'Zone C', 'Zone D'];
 
@@ -22,38 +25,101 @@ export default function DriverHome() {
   const [selectedZone, setSelectedZone] = useState('All Zones');
   const [selectedSlot, setSelectedSlot] = useState<SlotInfo | null>(null);
   //const [modalVisible, setModalVisible] = useState(false);
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  
+
+  const ParkingSlots = async ()=>{
+    try{
+      setLoading(true);
+      const data = await apiFetch('/slots');
+
+      const mappedData = data.map((item: any) => {
+
+        const zoneLetter = item.slot_number.charAt(0).toUpperCase();
+        const numberOnly = parseInt(item.slot_number.substring(1));
+
+        return {
+          ...item,
+          id: item.id.toString(),
+          zone: zoneLetter,              
+          number: numberOnly,            
+          status: item.status === 'available' ? 'free' : 
+                  item.status === 'occupied' ? 'taken' : 
+                  item.status === 'reserved' ? 'reserved' : 'maintenance',
+        };
+      });
+      setSlots(mappedData);
+      
+    }catch(error:any){
+      console.error("Fetch error:", error);
+      Alert.alert("Network Error", "Check your connection to the server");
+    }finally{
+      setLoading(false)
+    }
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      ParkingSlots();
+    }, [])
+  );
   const filteredSlots = useMemo(() => {
-    if (selectedZone === 'All Zones') return PARKING_SLOTS;
-    const zone = selectedZone.replace('Zone ', '');
-    return PARKING_SLOTS.filter((s) => s.zone === zone);
-  }, [selectedZone]);
+    if (selectedZone === 'All Zones') return slots;
+    const zoneLetter = selectedZone.replace('Zone ', '');
+    return slots.filter((s) => s.zone === zoneLetter);
+  }, [selectedZone, slots]);
 
   const stats = useMemo(() => {
-    const available = PARKING_SLOTS.filter((s) => s.status === 'free').length;
-    const occupied = PARKING_SLOTS.filter((s) => s.status === 'taken').length;
-    const reserved = PARKING_SLOTS.filter((s) => s.status === 'reserved').length;
-    return { available, occupied, reserved, total: PARKING_SLOTS.length };
-  }, []);
+    const available = slots.filter((s) => s.status === 'free').length;
+    const occupied = slots.filter((s) => s.status === 'taken').length;
+    const reserved = slots.filter((s) => s.status === 'reserved').length;
+    return { available, occupied, reserved, total: slots.length };
+  }, [slots]);
 
-  const handleSlotPress = (slot: ParkingSlot) => {
+  const handleSlotPress = (slot: any) => {
     setSelectedSlot({
-        id: slot.id,
-        number:      slot.id,                              
-        zone:        slot.zone,
-        ratePerHour: 100,                              
-     });
-    };
+      id: slot.id,
+      number: slot.slot_number,
+      zone: slot.zone,
+      ratePerHour: slot.hourly_rate || 100,
+    });
+  };
 
-  //const handleConfirm = (slot: ParkingSlot, hours: number) => {
-    //setModalVisible(false);
-    // Navigate to history or show success
-  //};
+  const handleCheckoutConfirmed = useCallback((slotId: string) => {
+      setSlots(prev =>
+        prev.map(s => s.id === slotId ? { ...s, status: 'leaving' } : s)
+      );
 
-  // Chunk slots into rows of 3
-  const rows: ParkingSlot[][] = [];
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        if (attempts > 12) { clearInterval(poll); return; } 
+
+        try {
+          const data = await apiFetch('/slots');
+          const updated = data.find((s: any) => s.id.toString() === slotId);
+          if (updated?.status === 'available') {
+            clearInterval(poll);
+            ParkingSlots(); 
+          }
+        } catch { clearInterval(poll); }
+      }, 5000);
+    }, []);
+
+  const rows = [];
   for (let i = 0; i < filteredSlots.length; i += 3) {
     rows.push(filteredSlots.slice(i, i + 3));
+  }
+
+  if (loading && slots.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={{ marginTop: 10, color: Colors.textSecondary }}>Loading slots...</Text>
+      </View>
+    );
   }
 
   return (
@@ -90,35 +156,13 @@ export default function DriverHome() {
       </View>
 
       <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-        {/* Stats */}
+        {/* Stats Card uses calculated stats */}
         <View style={styles.statsCard}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNum, { color: Colors.free }]}>{stats.available}</Text>
-            <Text style={styles.statLabel}>Available</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statNum, { color: Colors.taken }]}>{stats.occupied}</Text>
-            <Text style={styles.statLabel}>Occupied</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statNum, { color: Colors.reserved }]}>{stats.reserved}</Text>
-            <Text style={styles.statLabel}>Reserved</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statNum, { color: Colors.textPrimary }]}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
+           {/* ... stat items ... */}
         </View>
 
         {/* Zone Filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.zoneScroll}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.zoneScroll}>
           {ZONES.map((zone) => (
             <TouchableOpacity
               key={zone}
@@ -137,9 +181,8 @@ export default function DriverHome() {
           {rows.map((row, ri) => (
             <View key={ri} style={styles.gridRow}>
               {row.map((slot) => (
-                <SlotCard key={slot.id} slot={slot} onPress={handleSlotPress} />
+                <SlotCard key={slot.id} slot={slot} onPress={() => handleSlotPress(slot)} />
               ))}
-              {/* Fill empty cells */}
               {row.length < 3 && Array(3 - row.length).fill(null).map((_, i) => (
                 <View key={`empty-${i}`} style={{ flex: 1, margin: 5 }} />
               ))}
@@ -151,17 +194,17 @@ export default function DriverHome() {
       <BookingSheet
         visible={!!selectedSlot}
         slot={selectedSlot ?? { id: 0, number: 'A1', zone: 'A', ratePerHour: 100 }}
-        userPhone="0712345678"
+        userPhone=""
         onClose={() => setSelectedSlot(null)}
-        onConfirmed={(ref) => {
-            setSelectedSlot(null);
-            console.log('Booked:', ref);
+        onConfirmed={(ref, slotId) => {
+          if(slotId) handleCheckoutConfirmed(slotId);
+          else ParkingSlots(); 
         }}
-        />
+        onSlotRefresh={ParkingSlots}
+      />
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,

@@ -21,4 +21,15 @@ class AuditLog extends Model
             'changed_at' => 'datetime',
         ];
     }
+
+    // AuditLog model
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function slot()
+    {
+        return $this->belongsTo(ParkingSlot::class, 'parking_slot_id');
+    }
 }

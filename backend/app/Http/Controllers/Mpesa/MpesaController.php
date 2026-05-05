@@ -7,6 +7,7 @@ use App\Models\ParkingSlot;
 use App\Services\SlotStatusTransitioner;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Log;
 
 class MpesaController extends Controller
 {
@@ -19,33 +20,50 @@ class MpesaController extends Controller
 
     public function handle(Request $request)
     {
-        $data       = $request->all();
-        $callback   = $data['Body']['stkCallback'];
-        $resultCode = $callback['ResultCode'];
+        Log::info('M-Pesa STK Callback received', $request->all());
 
-        //Extract booking reference and amount from callback metadata
-        $metadata  = collect($callback['CallbackMetadata']['Item'] ?? []);
-        $reference = $metadata->firstWhere('Name', 'AccountReference')['Value'] ?? null;
-        $amountPaid= $metadata->firstWhere('Name', 'Amount')['Value'] ?? 0;
+        $callback = $request->input('Body.stkCallback');
 
-        if (!$reference) {
-            return response()->json(['message' => 'Invalid callback'], 400);
+        if (!$callback) {
+            Log::warning('M-Pesa callback missing stkCallback body');
+            return response()->json(['message' => 'Invalid payload'], 400);
         }
 
-        $booking = Booking::where('booking_reference', $reference)->first();
+        $resultCode = (int) $callback['ResultCode'];
+        $checkoutId = $callback['CheckoutRequestID'] ?? null;
+
+        if (!$checkoutId) {
+            Log::warning('M-Pesa callback missing CheckoutRequestID');
+            return response()->json(['message' => 'Missing CheckoutRequestID'], 400);
+        }
+
+        $booking = Booking::where('mpesa_checkout_id', $checkoutId)->first();
 
         if (!$booking) {
-            return response()->json(['message' => 'Booking not found'], 404);
+            Log::error('No booking found for CheckoutRequestID', ['checkout_id' => $checkoutId]);
+            // Still return 200 — Safaricom will keep retrying on non-200 responses
+            return response()->json(['message' => 'Booking not found'], 200);
         }
 
         if ($resultCode === 0) {
-            //Payment successful — record actual fee paid and confirm booking
+            // Payment successful — metadata only present on success
+            $metadata   = collect($callback['CallbackMetadata']['Item'] ?? []);
+            $amountPaid = $metadata->firstWhere('Name', 'Amount')['Value'] ?? 0;
+            $mpesaRef   = $metadata->firstWhere('Name', 'MpesaReceiptNumber')['Value'] ?? null;
+
             $booking->update([
-                'advance_fee_paid' => $amountPaid,      //record what was actually paid
-                'booking_status'   => 'confirmed',
+                'advance_fee_paid'  => $amountPaid,
+                'booking_status'    => 'confirmed',
+                'mpesa_advance_ref' => $mpesaRef,
+            ]);
+
+            Log::info('Booking confirmed via M-Pesa', [
+                'booking_ref' => $booking->booking_reference,
+                'mpesa_ref'   => $mpesaRef,
+                'amount'      => $amountPaid,
             ]);
         } else {
-            //Payment failed — cancel booking and free the slot
+            // Payment failed/cancelled — free the slot back
             $booking->update(['booking_status' => 'cancelled']);
 
             $slot = ParkingSlot::find($booking->slot_id);
@@ -53,11 +71,18 @@ class MpesaController extends Controller
                 $this->transitioner->transition(
                     $slot,
                     'available',
-                    'Payment failed for ' . $reference  //slot freed back
+                    'Payment failed for ' . $booking->booking_reference
                 );
             }
+
+            Log::warning('Booking cancelled — M-Pesa payment failed', [
+                'booking_ref' => $booking->booking_reference,
+                'result_code' => $resultCode,
+                'result_desc' => $callback['ResultDesc'] ?? 'unknown',
+            ]);
         }
 
-        return response()->json(['message' => 'Callback received'], 200);
+        // Always return 200 — Safaricom expects this to stop retrying
+        return response()->json(['ResultCode' => 0, 'ResultDesc' => 'Accepted']);
     }
 }

@@ -13,8 +13,10 @@ import {
   SafeAreaView,
   Animated,
   StatusBar,
+  ActivityIndicator
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { apiFetch } from '../../../constants/api'; 
 import { colors, shadows, scale } from '@/constants/theme';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -31,21 +33,6 @@ interface SessionData {
   depositPaid: number;
   ratePerHour: number;
 }
-
-// ─── Mock Session (replace with real data / route params) ───────────────────
-
-const MOCK_SESSION: SessionData = {
-  driverName: 'James Mwangi',
-  phone: '+254 712 345 678',
-  plate: 'KDA 123A',
-  vehicle: 'Toyota Fielder',
-  color: 'Silver',
-  slot: 'A-14',
-  lot: 'CBD Lot A',
-  checkInTime: new Date(Date.now() - 1000 * 60 * 97), // 1hr 37min ago
-  depositPaid: 200,
-  ratePerHour: 100,
-};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -246,18 +233,77 @@ function AmountCard({ session }: { session: SessionData }) {
 }
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
-
 export default function SessionDetails() {
-  const session = MOCK_SESSION; // TODO: replace with useLocalSearchParams or context
+  //const params = useLocalSearchParams<{ sessionId: string }>();
+  //const sessionId = Array.isArray(params.sessionId)
+    //? params.sessionId[0]
+    //: params.sessionId;
+
   const headerAnim = useRef(new Animated.Value(0)).current;
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Animated.timing(headerAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
+      toValue: 1, duration: 500, useNativeDriver: true,
     }).start();
+
+    const loadSession = async () => {
+      try {
+        const active = await apiFetch('/sessions/active');
+
+        const res = await apiFetch(`/sessions/${active.session_id}`);
+
+        setSession({
+          driverName:  res.driver.name,
+          phone:       res.driver.phone,
+          plate:       res.vehicle.plate,
+          vehicle:     res.vehicle.model,
+          color:       res.vehicle.color,
+          slot:        res.slot,
+          lot:         res.lot,
+          checkInTime: new Date(res.checkin_time),
+          depositPaid: res.deposit_paid,
+          ratePerHour: res.rate_per_hour,
+        });
+      } catch (err: any) {
+        if (err.message?.includes('404')) {
+          setError('No active session found.');
+        } else {
+          setError('Failed to load session.');
+        }
+        console.error('Failed to load session', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadSession();
   }, []);
+
+  // ── Guard renders ──
+  if (loading) {
+    return (
+      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color={colors.green} size="large" />
+      </View>
+    );
+  }
+
+  if (error || !session) {
+    return (
+      <View style={[styles.screen, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: colors.white }}>Failed to load session.</Text>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ color: colors.green, marginTop: 12 }}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+ 
+
 
   return (
     <View style={styles.screen}>

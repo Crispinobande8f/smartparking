@@ -23,9 +23,9 @@ class PricingRule extends Model
     protected function casts(): array
     {
         return [
-            'hourly_rate' => 'decimal:2',
-            'late_fee_per_hour' => 'decimal:2',
-            'advance_payment_percentage' => 'decimal:2',
+            'hourly_rate' => 'float',
+            'late_fee_per_hour' => 'float',
+            'advance_payment_percentage' => 'float',
             'grace_period_minutes' => 'integer',
             'is_active' => 'boolean',
         ];

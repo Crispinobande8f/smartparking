@@ -1,5 +1,4 @@
-// Mock data shared across attendant screens
-// Replace with real API calls when backend is ready
+import { apiFetch } from "./api";
 
 export interface ActiveSession {
   id: string;
@@ -7,8 +6,20 @@ export interface ActiveSession {
   driverName: string;
   slot: string;
   zone: string;
-  startTime: string; // ISO string
+  startTime: string; 
   ratePerHour: number;
+}
+
+export interface CheckoutPreview {
+  session_id: string;
+  checkin_time: string;
+  total_duration_minutes: number;
+  base_fee: number;
+  late_fee: number;
+  total_fee: number;
+  advance_paid: number;
+  balance_due: number;
+  is_overtime: boolean;
 }
 
 export interface BookingHistoryItem {
@@ -22,35 +33,38 @@ export interface BookingHistoryItem {
   receiptCode?: string;
 }
 
-export const MOCK_ACTIVE_SESSIONS: ActiveSession[] = [
-  {
-    id: '1',
-    plate: 'KBZ 412G',
-    driverName: 'James Kamau',
-    slot: 'A2',
-    zone: 'Zone A',
-    startTime: new Date(Date.now() - 6 * 60 * 60 * 1000 - 21 * 60 * 1000).toISOString(),
-    ratePerHour: 100,
-  },
-  {
-    id: '2',
-    plate: 'KCG 230A',
-    driverName: 'Grace Wanjiku',
-    slot: 'B1',
-    zone: 'Zone B',
-    startTime: new Date(Date.now() - 7 * 60 * 60 * 1000 - 36 * 60 * 1000).toISOString(),
-    ratePerHour: 100,
-  },
-  {
-    id: '3',
-    plate: 'KDD 887K',
-    driverName: 'Peter Otieno',
-    slot: 'C3',
-    zone: 'Zone C',
-    startTime: new Date(Date.now() - 5 * 60 * 60 * 1000 - 51 * 60 * 1000).toISOString(),
-    ratePerHour: 100,
-  },
-];
+export async function searchSessionByPlate(plate: string): Promise<ActiveSession | null> {
+  try {
+    const cleanPlate = plate.trim().replace(/\s+/g, ' ').toUpperCase();
+    const data = await apiFetch(`/sessions?plate=${encodeURIComponent(cleanPlate)}`);
+
+    return {
+      id:          data.session_id,
+      plate:       data.vehicle_plate,
+      driverName:  data.driver_name,
+      slot:        data.slot,
+      zone:        data.slot_type ?? 'Standard',
+      startTime:   data.checkin_time,
+      ratePerHour: data.rate_per_hour ?? 100,
+    };
+  } catch (e: any) {
+    if (e.message?.includes('404') || e.message?.toLowerCase().includes('not found')) {
+      return null; 
+    }
+    throw e; 
+  }
+}
+
+/** GET /v1/sessions/{id}/checkout-preview */
+export async function fetchCheckoutPreview(sessionId: string): Promise<CheckoutPreview> {
+  return apiFetch(`/sessions/${sessionId}/checkout-preview`);
+}
+
+/** POST /v1/sessions/{id}/checkout */
+export async function confirmCheckout(sessionId: string): Promise<{ message: string; total_fee: number; checkout_at: string }> {
+  return apiFetch(`/sessions/${sessionId}/checkout`, { method: 'POST' });
+}
+
 
 export const MOCK_HISTORY: BookingHistoryItem[] = [
   {

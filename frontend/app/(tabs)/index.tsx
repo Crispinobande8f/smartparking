@@ -14,30 +14,75 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow } from '../../constants/theme';
 import { DEMO_ACCOUNTS } from '../../constants/data';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+
+interface FormData {
+  email: string;
+  password: string;
+}
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  //const [email, setEmail] = useState('');
+  //const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({email:'', password:''})
+  const [formData, setFormData] = useState<FormData>({ email: '', password: '' });
+  const [loading, setLoading] = useState(false);
 
   const handleSignIn = async () => {
-    const res =  await fetch('http://192.168.100.10:8000/api/v1/auth/register',{
-      method: 'POST',
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: form.email,
-          phone_number:form.phone,
-        });
-    }) 
+    setLoading(true);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
+    try{
+      const res =  await fetch('http://192.168.0.102:8000/api/v1/auth/login',{
+        method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: formData.email,
+            password:formData.password,
+          }),
+      });
+      
+      clearTimeout(timeout);
+      const data = await res.json();
+
+      if (res.ok){
+        const {token, user} = data;
+        const userRole = user.role;
+
+        await AsyncStorage.setItem('token', token);
+        await AsyncStorage.setItem('role', userRole);
+
+        if (userRole === 'county'){
+          router.push('/(tabs)')
+        } else if(userRole === 'attendant'){
+          router.push('/(tabs)/attendant')
+        }else if (userRole ==='admin'){
+          router.push('/(tabs)/admin')
+        }else{
+          router.push('/(tabs)/driver')
+        }
+      }else{
+        console.error('Login failed:', data.message);
+      }
+    }catch(error){
+      console.error('Error signing in:', error);
+    }finally{
+      setLoading(false);
+    }
   };
 
-  const fillDemo = (acc: typeof DEMO_ACCOUNTS[0]) => {
-    setEmail(acc.email);
-    setPassword(acc.password);
+  const fillDemo = (acc: any) => {
+    setFormData({
+      email: acc.email,
+      password: acc.password || '', // assuming your demo data has password
+    });
   };
+
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -76,8 +121,8 @@ export default function LoginScreen() {
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
-                value={email}
-                onChangeText={setEmail}
+                value={formData.email}
+                onChangeText={(text) => setFormData(prev => ({...prev, email:text}))}
               />
             </View>
 
@@ -89,8 +134,8 @@ export default function LoginScreen() {
                 placeholder="Password"
                 placeholderTextColor={Colors.textMuted}
                 secureTextEntry={!showPassword}
-                value={password}
-                onChangeText={setPassword}
+                value={formData.password}
+                onChangeText={(text) => setFormData(prev => ({...prev, password:text}))}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
                 <Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={18} color={Colors.textMuted} />
@@ -102,8 +147,14 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             {/* Sign In Button */}
-            <TouchableOpacity style={styles.signInBtn} onPress={handleSignIn} activeOpacity={0.85}>
-              <Text style={styles.signInText}>Sign In</Text>
+            <TouchableOpacity style={styles.signInBtn} onPress={handleSignIn} activeOpacity={0.85} disabled={loading}>
+              {loading ? (
+                  <Text style={styles.signInText}>Signing in…</Text>
+                  ) : (
+                    <>
+                      <Text style={styles.signInText}>Sign In</Text>
+                    </>
+              )}
             </TouchableOpacity>
 
             {/* ── NEW: Register link ── */}

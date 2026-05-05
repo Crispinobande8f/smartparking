@@ -19,11 +19,13 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import {
-  MOCK_ACTIVE_SESSIONS,
+  searchSessionByRef,
+  fetchCheckoutPreview,
+  confirmCheckoutSession,
   ActiveSession,
-  getElapsed,
-  getAmount,
-} from '@/constants/mockData';
+  CheckoutPreview,
+} from '@/services/sessions';
+import { getElapsed, getAmount } from '@/constants/mockData';
 import { colors, shadows, scale } from '@/constants/theme';
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
@@ -34,6 +36,7 @@ export default function CheckOutScreen() {
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [preview, setPreview] = useState<CheckoutPreview | null>(null);
 
   // Live bill update
   const [elapsed, setElapsed] = useState('');
@@ -50,68 +53,82 @@ export default function CheckOutScreen() {
     ]).start();
   }, []);
 
-  // When a session is found, animate the result card in
-  useEffect(() => {
-    if (foundSession) {
-      cardAnim.setValue(0);
-      Animated.spring(cardAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        damping: 20,
-        stiffness: 120,
-      }).start();
-      setElapsed(getElapsed(foundSession.startTime));
-      setAmount(getAmount(foundSession.startTime, foundSession.ratePerHour));
-      // Live updates
-      const interval = setInterval(() => {
-        setElapsed(getElapsed(foundSession.startTime));
-        setAmount(getAmount(foundSession.startTime, foundSession.ratePerHour));
-      }, 60000);
-      return () => clearInterval(interval);
-    }
-  }, [foundSession]);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setNotFound(false);
     setFoundSession(null);
-    // TODO: GET /api/v1/sessions?plate=query
-    setTimeout(() => {
-      const session = MOCK_ACTIVE_SESSIONS.find(
-        (s) => s.plate.toLowerCase() === query.trim().toLowerCase()
-      );
-      setLoading(false);
+    setPreview(null);
+
+    try {
+      const session = await searchSessionByRef(query);
       if (session) {
         setFoundSession(session);
+        const bill = await fetchCheckoutPreview(session.session_id); // use session_id not id
+        setPreview(bill);
       } else {
         setNotFound(true);
       }
-    }, 800);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not reach the server.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleConfirmCheckout = () => {
+  const handleConfirmCheckout = async () => {
     if (!foundSession) return;
     setConfirming(true);
-    // TODO: POST /api/v1/sessions/:id/checkout
-    setTimeout(() => {
-      setConfirming(false);
+
+    try {
+      const result = await confirmCheckoutSession(foundSession.session_id);
+
+      // Handle M-Pesa STK push path — balance is owed
+      if (result.checkout_request_id) {
+        Alert.alert(
+          'Payment Required 📱',
+          `An M-Pesa prompt has been sent to the driver.\nBalance due: KES ${preview?.balance_due}`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Zero-balance path — fully complete
       Alert.alert(
         'Check-Out Successful ✅',
-        `${foundSession.plate} checked out. Total: KES ${amount}`,
-        [
-          {
-            text: 'Done',
-            onPress: () => {
-              setFoundSession(null);
-              setQuery('');
-              router.back();
-            },
+        `${foundSession.plate} checked out.\nTotal: KES ${preview?.total_fee ?? 0}`,
+        [{
+          text: 'Done',
+          onPress: () => {
+            setFoundSession(null);
+            setPreview(null);
+            setQuery('');
+            router.back();
           },
-        ]
+        }]
       );
-    }, 1600);
+    } catch (e: any) {
+      Alert.alert('Checkout Failed', e.message ?? 'Something went wrong.');
+    } finally {
+      setConfirming(false);
+    }
   };
+
+  useEffect(() => {
+    if (foundSession) {
+      cardAnim.setValue(0);
+      Animated.spring(cardAnim, { toValue: 1, useNativeDriver: true, damping: 20, stiffness: 120 }).start();
+      setElapsed(getElapsed(foundSession.checkin_time));
+      setAmount(getAmount(foundSession.checkin_time, foundSession.hourly_rate));
+
+      const interval = setInterval(() => {
+        setElapsed(getElapsed(foundSession.checkin_time));
+        setAmount(getAmount(foundSession.checkin_time, foundSession.hourly_rate));
+      }, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [foundSession]);
 
   return (
     <View style={styles.screen}>
@@ -147,7 +164,7 @@ export default function CheckOutScreen() {
                   style={styles.searchInput}
                   value={query}
                   onChangeText={setQuery}
-                  placeholder="KBZ 412G"
+                  placeholder="BK-XXXXXXXX"
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="characters"
                   autoCorrect={false}
@@ -168,7 +185,7 @@ export default function CheckOutScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Quick tap active sessions */}
+            {/* Quick tap active sessions 
             <Text style={styles.quickLabel}>Or tap an active session:</Text>
             <View style={styles.quickRow}>
               {MOCK_ACTIVE_SESSIONS.map((s) => (
@@ -185,16 +202,16 @@ export default function CheckOutScreen() {
                   <Text style={styles.quickChipText}>{s.plate}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </View> */}
           </View>
 
           {/* Not found state */}
           {notFound && (
             <View style={styles.notFoundCard}>
               <Text style={styles.notFoundIcon}>❌</Text>
-              <Text style={styles.notFoundText}>No active session found for "{query}"</Text>
+              <Text style={styles.notFoundText}>{`No active session found for "${query}"`}</Text>
             </View>
-          )}
+          )} 
 
           {/* Found Session Card */}
           {foundSession && (
@@ -222,7 +239,7 @@ export default function CheckOutScreen() {
                 </View>
                 <View style={styles.sessionInfo}>
                   <Text style={styles.sessionPlate}>{foundSession.plate}</Text>
-                  <Text style={styles.sessionDriver}>{foundSession.driverName}</Text>
+                  <Text style={styles.sessionDriver}>{foundSession.driver_name}</Text>
                 </View>
                 <View style={styles.activePill}>
                   <View style={styles.activeDot} />
@@ -263,13 +280,18 @@ export default function CheckOutScreen() {
               ]}
             >
               <Text style={styles.billLabel}>Total Bill</Text>
-              <Text style={styles.billAmount}>KES {amount}</Text>
+              <Text style={styles.billAmount}>KES {preview?.total_fee ?? amount}</Text>
               <Text style={styles.billBreakdown}>
-                {elapsed} × KES {foundSession.ratePerHour}/hr
+                {elapsed} × KES {foundSession.hourly_rate}/hr
               </Text>
             </Animated.View>
           )}
 
+          {preview?.is_overtime && (
+              <Text style={[styles.billBreakdown, { color: '#E53935', marginTop: 4 }]}>
+                ⚠️ Overtime — late fee: KES {preview.late_fee}
+              </Text>
+            )}
           {/* Confirm Check-Out button */}
           {foundSession && (
             <Animated.View style={{ opacity: cardAnim }}>
