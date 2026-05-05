@@ -25,11 +25,11 @@ return new class extends Migration
 
             $table->foreignId('checked_in_by')
                   ->nullable()
-                  ->after('session_status')
+                 // ->after('session_status')
                   ->constrained('users')
                   ->nullOnDelete();
 
-            $table->timestamp('checkin_time');
+            $table->timestamp('checkin_time')->useCurrent();
             $table->timestamp('checkout_time')->nullable();
             $table->unsignedInteger('total_duration')->nullable();
             $table->decimal('base_fee', 10, 2)->nullable();
