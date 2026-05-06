@@ -1,7 +1,4 @@
-/**
- * AdminDashboard — app/(admin)/index.tsx
- * Shows: stats grid, weekly bar chart, quick actions, recent sessions
- */
+
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,

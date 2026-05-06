@@ -37,7 +37,7 @@ export default function LoginScreen() {
     const timeout = setTimeout(() => controller.abort(), 10_000);
 
     try{
-      const res =  await fetch('http://192.168.0.102:8000/api/v1/auth/login',{
+      const res =  await fetch('http://192.168.0.11:8000/api/v1/auth/login',{
         method: 'POST',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },

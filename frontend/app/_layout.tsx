@@ -1,8 +1,9 @@
-//import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-import { useFonts, Lexend_400Regular, Lexend_500Medium, Lexend_700Bold } from '@expo-google-fonts/lexend';
+import { useFonts, Lexend_400Regular, 
+Lexend_500Medium
+, Lexend_700Bold } from '@expo-google-fonts/lexend';
 //import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
